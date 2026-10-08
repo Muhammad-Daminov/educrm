@@ -2,19 +2,22 @@
   "name": "@educrm/shared",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.js"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@educrm/config": "workspace:*",
+    "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
-    "eslint": "^9.17.0"
+    "eslint": "^9.17.0",
+    "vitest": "^2.1.8"
   }
 }

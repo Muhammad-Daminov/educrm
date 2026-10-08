@@ -4,9 +4,5 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.spec.ts'],
-    globals: false,
-    // Integration tests spin up a real Postgres via Testcontainers.
-    testTimeout: 60_000,
-    hookTimeout: 60_000,
   },
 });

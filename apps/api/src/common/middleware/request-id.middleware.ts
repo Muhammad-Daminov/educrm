@@ -32,14 +32,22 @@ export function resolveRequestId(req: RequestIdSource): string {
   return fromHeader || randomUUID();
 }
 
+/**
+ * Idempotent: safe to call more than once per request (e.g. once eagerly
+ * from the CLS middleware's `setup` hook, before any tenant/auth logic that
+ * might throw, and again here) since it reuses req.id if already set.
+ */
+export function assignRequestId(req: Request, res: Response): string {
+  const requestId = resolveRequestId(req);
+  (req as RequestWithId).id = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  return requestId;
+}
+
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction): void {
-    const requestId = resolveRequestId(req);
-
-    (req as RequestWithId).id = requestId;
-    res.setHeader('X-Request-Id', requestId);
-
+    assignRequestId(req, res);
     next();
   }
 }
