@@ -17,7 +17,11 @@ function tenantScoped(tenantId: string | undefined) {
 
 async function seedTenant(migratorPg: PgClient, name: string): Promise<string> {
   const id = uuidv7();
-  await migratorPg.query('INSERT INTO tenants (id, name) VALUES ($1, $2)', [id, name]);
+  await migratorPg.query('INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)', [
+    id,
+    name,
+    `${name.toLowerCase().replace(/\s+/g, '-')}-${id}`,
+  ]);
   return id;
 }
 

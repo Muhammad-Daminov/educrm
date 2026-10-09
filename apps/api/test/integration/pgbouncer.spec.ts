@@ -22,12 +22,10 @@ beforeAll(async () => {
   await migratorPg.connect();
   tenantA = uuidv7();
   tenantB = uuidv7();
-  await migratorPg.query('INSERT INTO tenants (id, name) VALUES ($1, $2), ($3, $4)', [
-    tenantA,
-    'Tenant A',
-    tenantB,
-    'Tenant B',
-  ]);
+  await migratorPg.query(
+    'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3), ($4, $5, $6)',
+    [tenantA, 'Tenant A', `tenant-a-${tenantA}`, tenantB, 'Tenant B', `tenant-b-${tenantB}`],
+  );
   await migratorPg.end();
 
   // Connects as app_user, through PgBouncer, pool_mode=transaction — exactly

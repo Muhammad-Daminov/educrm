@@ -23,12 +23,29 @@ const GUARD_DECORATORS = new Set(['Public', 'RequirePermission']);
  * @param {string} source
  * @returns {{ line: number, decorator: string }[]} violations
  */
+const CLASS_DECORATOR = /^@Controller\(/;
+
 function checkSource(source) {
   const lines = source.split('\n').map((line) => line.trim());
 
-  const classHasGuardDecorator = lines.some(
-    (line) => /^@Public\(/.test(line) || /^@RequirePermission\(/.test(line),
-  );
+  // Only a guard decorator stacked directly on @Controller(...) applies to
+  // every route in the class — a decorator on one method must not exempt
+  // sibling methods from this check.
+  let classHasGuardDecorator = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!CLASS_DECORATOR.test(lines[i])) {
+      continue;
+    }
+    let start = i;
+    while (start > 0 && DECORATOR_LINE.test(lines[start - 1])) {
+      start -= 1;
+    }
+    const block = lines.slice(start, i + 1);
+    classHasGuardDecorator = block.some(
+      (line) => GUARD_DECORATORS.has((DECORATOR_LINE.exec(line) ?? [])[1]),
+    );
+    break;
+  }
 
   const violations = [];
 
