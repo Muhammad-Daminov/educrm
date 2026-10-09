@@ -148,6 +148,42 @@ model UserRole {
   @@map("user_roles")
 }
 
+enum OutboxStatus {
+  /// Waiting to be claimed; `next_retry_at` says when it is due.
+  pending
+  /// Claimed by a dispatcher and handed to the queue.
+  dispatched
+  /// A handler ran to completion.
+  done
+  /// Gave up after MAX_ATTEMPTS — needs a human (TZ M2 "dead-letter + alert").
+  dead
+}
+
+/// Transactional outbox (TZ 7.3 pattern 1). Rows are written *inside* the
+/// business transaction via OutboxService.publish(event, tx) and picked up
+/// afterwards by the worker process (APP_ROLE=worker).
+///
+/// The partial index TZ 5.2 asks for — `(next_retry_at) WHERE status =
+/// 'pending'` — is not expressible here and lives in the migration only.
+model OutboxEvent {
+  id             String       @id @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  eventType      String       @map("event_type")
+  payload        Json
+  status         OutboxStatus @default(pending)
+  attempts       Int          @default(0)
+  nextRetryAt    DateTime     @default(now()) @map("next_retry_at")
+  lastError      String?      @map("last_error")
+  causationId    String?      @map("causation_id") @db.Uuid
+  causationDepth Int          @default(0) @map("causation_depth")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  dispatchedAt   DateTime?    @map("dispatched_at")
+  processedAt    DateTime?    @map("processed_at")
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("outbox_events")
+}
+
 /// Append-only audit trail, TZ M11.3 format. No tenant relation on purpose:
 /// the table is RANGE-partitioned by month, and an FK from it would have to
 /// be re-validated on every partition attach while buying nothing — the log

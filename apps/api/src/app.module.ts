@@ -13,6 +13,7 @@ import { RedisModule } from './redis/redis.module';
 import { BranchesModule } from './branches/branches.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
+import { OutboxModule } from './outbox/outbox.module';
 import { resolveAuthFromAccessToken } from './auth/access-token-context.resolver';
 import { CsrfGuard } from './auth/guards/csrf.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
@@ -59,6 +60,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
     RedisModule,
     AuthModule,
     AuditModule,
+    OutboxModule,
     BranchesModule,
   ],
   providers: [
