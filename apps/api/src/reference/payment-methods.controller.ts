@@ -11,77 +11,81 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import type { Branch } from '@prisma/client';
+import type { PaymentMethod } from '@prisma/client';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { listQuerySchema, type ListQueryDto } from '../common/crud/list-query.dto';
 import { parseIfMatch } from '../common/crud/optimistic-lock';
 import type { Enveloped } from '../common/http/response-envelope';
-import { BranchesService } from './branches.service';
+import { PaymentMethodsService } from './payment-methods.service';
 import {
-  createBranchSchema,
-  updateBranchSchema,
-  type CreateBranchDto,
-  type UpdateBranchDto,
-} from './dto/create-branch.dto';
+  createPaymentMethodSchema,
+  updatePaymentMethodSchema,
+  type CreatePaymentMethodDto,
+  type UpdatePaymentMethodDto,
+} from './dto/payment-method.dto';
 
 /**
- * TZ M1.1. `branch.archive` covers restore as well: the catalog has no
- * `branch.restore`, and whoever may hide a branch is exactly who may bring
- * it back. There is no DELETE — TZ M1.1 SHART: "Filial oʻchirilmaydi —
- * is_active=false. Tarixiy moliyaviy yozuvlar bogʻlangan."
+ * TZ M1.3 "toʻlov usuli" (payment method).
+ *
+ * Reads need `reference.view` — every operational screen picks one of
+ * these. Writes need `settings.manage`. There is no DELETE: TZ M1.3 KERAK
+ * says a reference row is archived, never deleted, or the link from old
+ * groups and payments breaks.
  */
-@Controller('branches')
-export class BranchesController {
-  constructor(private readonly service: BranchesService) {}
+@Controller('payment-methods')
+export class PaymentMethodsController {
+  constructor(private readonly service: PaymentMethodsService) {}
 
-  @RequirePermission('branch.view')
+  @RequirePermission('reference.view')
   @Get()
   list(
     @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryDto,
-  ): Promise<Enveloped<Branch[]>> {
+  ): Promise<Enveloped<PaymentMethod[]>> {
     return this.service.list(query);
   }
 
-  @RequirePermission('branch.view')
+  @RequirePermission('reference.view')
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string): Promise<Branch> {
+  get(@Param('id', ParseUUIDPipe) id: string): Promise<PaymentMethod> {
     return this.service.get(id);
   }
 
-  @RequirePermission('branch.create')
+  @RequirePermission('settings.manage')
   @Post()
-  create(@Body(new ZodValidationPipe(createBranchSchema)) dto: CreateBranchDto): Promise<Branch> {
+  create(
+    @Body(new ZodValidationPipe(createPaymentMethodSchema)) dto: CreatePaymentMethodDto,
+  ): Promise<PaymentMethod> {
     return this.service.create(dto);
   }
 
-  @RequirePermission('branch.update')
+  @RequirePermission('settings.manage')
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body(new ZodValidationPipe(updateBranchSchema)) dto: UpdateBranchDto,
+    @Body(new ZodValidationPipe(updatePaymentMethodSchema)) dto: UpdatePaymentMethodDto,
     @Headers('if-match') ifMatch?: string,
-  ): Promise<Branch> {
+  ): Promise<PaymentMethod> {
     return this.service.update(id, parseIfMatch(ifMatch), dto);
   }
 
-  @RequirePermission('branch.archive')
+  @RequirePermission('settings.manage')
   @Post(':id/archive')
   @HttpCode(HttpStatus.OK)
   archive(
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('if-match') ifMatch?: string,
-  ): Promise<Branch> {
+  ): Promise<PaymentMethod> {
     return this.service.archive(id, parseIfMatch(ifMatch));
   }
 
-  @RequirePermission('branch.archive')
+  @RequirePermission('settings.manage')
   @Post(':id/restore')
   @HttpCode(HttpStatus.OK)
   restore(
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('if-match') ifMatch?: string,
-  ): Promise<Branch> {
+  ): Promise<PaymentMethod> {
     return this.service.restore(id, parseIfMatch(ifMatch));
   }
 }

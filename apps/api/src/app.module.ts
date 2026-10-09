@@ -5,12 +5,18 @@ import type { Request, Response } from 'express';
 import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './config/env.validation';
-import { assignRequestId, RequestIdMiddleware, resolveRequestId } from './common/middleware/request-id.middleware';
+import {
+  assignRequestId,
+  RequestIdMiddleware,
+  resolveRequestId,
+} from './common/middleware/request-id.middleware';
 import { captureRequestMeta } from './common/request-meta';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { BranchesModule } from './branches/branches.module';
+import { ReferenceModule } from './reference/reference.module';
+import { ClassroomsModule } from './classrooms/classrooms.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { OutboxModule } from './outbox/outbox.module';
@@ -68,6 +74,8 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
     AuditModule,
     OutboxModule,
     BranchesModule,
+    ReferenceModule,
+    ClassroomsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },
