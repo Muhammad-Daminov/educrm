@@ -98,6 +98,16 @@ export const ALL_PERMISSION_CODES = [
   'audit.view',
   'settings.manage',
   'api_key.manage',
+  /**
+   * Not in the TZ 3.2 catalog as printed — added in the T05 migration
+   * because reading reference data (disciplines, levels, age categories,
+   * payment methods, holidays, classrooms) is something every operational
+   * screen needs, and `settings.manage` is the only reference-data
+   * permission the catalog has. Granting `settings.manage` to a receptionist
+   * so they can pick a discipline would hand them the whole settings
+   * surface. Writes stay behind `settings.manage`. See docs/QUESTIONS.md.
+   */
+  'reference.view',
 ] as const;
 
 export interface RoleTemplate {
@@ -161,6 +171,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
         'schedule.view',
         'schedule.create',
         'report.sales',
+        'reference.view',
       ],
       'branch',
     ),
@@ -180,6 +191,8 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
         'payment.create',
         'invoice.view',
         'student.view',
+        'employee.view',
+        'reference.view',
       ],
       'branch',
     ),
@@ -213,6 +226,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
         'report.finance',
         'export.run',
         'import.run',
+        'reference.view',
       ],
       'all',
     ),
@@ -221,7 +235,16 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     code: 'teacher',
     name: 'Teacher',
     permissions: withScope(
-      ['schedule.view', 'attendance.view', 'attendance.mark', 'lesson.complete', 'payroll.view_own'],
+      [
+        'schedule.view',
+        'attendance.view',
+        'attendance.mark',
+        'lesson.complete',
+        'payroll.view_own',
+        // Reference data is tenant-global and carries nothing sensitive; a
+        // teacher's own-scope screens still need to name a discipline.
+        'reference.view',
+      ],
       'own',
     ),
   },

@@ -21,6 +21,13 @@ model Tenant {
   rolePermissions RolePermission[]
   userRoles       UserRole[]
   userBranches    UserBranch[]
+  classrooms      Classroom[]
+  disciplines     Discipline[]
+  levels          Level[]
+  ageCategories   AgeCategory[]
+  paymentMethods  PaymentMethod[]
+  holidays        Holiday[]
+  teacherProfiles TeacherProfile[]
 
   @@map("tenants")
 }
@@ -34,12 +41,22 @@ model Branch {
   phone     String?
   timezone  String   @default("Asia/Tashkent")
   isActive  Boolean  @default(true) @map("is_active")
+  /// Read-only STORED GENERATED column, uz_search_key(name) — see Discipline.
+  nameKey   String?  @map("name_key")
+  version   Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id])
   userBranches UserBranch[]
+  classrooms   Classroom[]
+  holidays     Holiday[]
 
   @@unique([tenantId, code])
+  /// Target of the composite (tenant_id, branch_id) foreign keys on
+  /// classrooms and holidays: a reference that carries the tenant makes a
+  /// cross-tenant row structurally impossible, not just policy-blocked.
+  @@unique([tenantId, id])
   @@map("branches")
 }
 
@@ -67,15 +84,21 @@ model User {
   email        String?
   passwordHash String   @map("password_hash")
   isActive     Boolean  @default(true) @map("is_active")
+  /// Read-only STORED GENERATED column, uz_search_key(full_name).
+  fullNameKey  String?  @map("full_name_key")
+  version      Int      @default(1)
   createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant       Tenant       @relation(fields: [tenantId], references: [id])
-  sessions     Session[]
-  userRoles    UserRole[]
-  userBranches UserBranch[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  sessions       Session[]
+  userRoles      UserRole[]
+  userBranches   UserBranch[]
+  teacherProfile TeacherProfile?
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
+  @@unique([tenantId, id])
   @@map("users")
 }
 
@@ -226,4 +249,237 @@ model UserBranch {
 
   @@unique([tenantId, userId, branchId])
   @@map("user_branches")
+}
+
+// ---------------------------------------------------------------------------
+// Organization and reference data (TZ M1.1–M1.4)
+//
+// Every one of these is archived, never deleted (TZ M1.1 "Filial
+// o'chirilmaydi — is_active=false", M1.3 "Har bir ma'lumotnoma yozuvi
+// o'chirilmaydi"): historical lessons, charges and payments point at them,
+// and a deleted row would cut those links.
+//
+// Name uniqueness is per tenant on `uz_search_key(name)`, not on the raw
+// string — see the migration. "Ingliz tili" and "ingliz  tili" are the same
+// discipline, and so is one typed with an ASCII apostrophe (TZ 8.5).
+// ---------------------------------------------------------------------------
+
+/// TZ M1.2. Occupancy is derived from lessons (TZ M4.4), never stored here.
+model Classroom {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  name      String
+  /// Seats. Used as a capacity warning on enrollment (TZ M4.2), not a hard cap.
+  capacity  Int?
+  equipment String?
+  isActive  Boolean  @default(true) @map("is_active")
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name).
+  /// Never pass it in create/update data — the database computes it. List
+  /// endpoints filter and ORDER BY it, so names sort the TZ 8.5 way
+  /// instead of by code point.
+  nameKey   String?  @map("name_key")
+  /// Optimistic locking (TZ 6.1): bumped inside the same UPDATE that
+  /// filters on it, so a lost update is impossible rather than unlikely.
+  /// A mismatch is 409 VERSION_CONFLICT.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id])
+
+  @@index([tenantId, branchId])
+  @@map("classrooms")
+}
+
+/// TZ M1.3 "fan".
+model Discipline {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name).
+  /// Never pass it in create/update data — the database computes it. List
+  /// endpoints filter and ORDER BY it, so names sort the TZ 8.5 way
+  /// instead of by code point.
+  nameKey   String?  @map("name_key")
+  /// Optimistic locking (TZ 6.1): bumped inside the same UPDATE that
+  /// filters on it, so a lost update is impossible rather than unlikely.
+  /// A mismatch is 409 VERSION_CONFLICT.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  levels             Level[]
+  teacherDisciplines TeacherDiscipline[]
+
+  @@unique([tenantId, id])
+  @@map("disciplines")
+}
+
+/// TZ M1.3 "daraja". `disciplineId` is optional: UX P6 chains filial → fan →
+/// daraja, so a level usually belongs to one discipline, but a centre that
+/// grades everything A1..C2 shouldn't have to re-enter the ladder per
+/// discipline — a null discipline means "applies to all" (docs/QUESTIONS.md).
+model Level {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  disciplineId String?  @map("discipline_id") @db.Uuid
+  name         String
+  sortOrder    Int      @default(0) @map("sort_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name).
+  /// Never pass it in create/update data — the database computes it. List
+  /// endpoints filter and ORDER BY it, so names sort the TZ 8.5 way
+  /// instead of by code point.
+  nameKey      String?  @map("name_key")
+  /// Optimistic locking (TZ 6.1): bumped inside the same UPDATE that
+  /// filters on it, so a lost update is impossible rather than unlikely.
+  /// A mismatch is 409 VERSION_CONFLICT.
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  discipline    Discipline?    @relation(fields: [tenantId, disciplineId], references: [tenantId, id])
+  teacherLevels TeacherLevel[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, disciplineId])
+  @@map("levels")
+}
+
+/// TZ M1.3 "yosh toifasi". An open-ended top band has `maxAge = null`.
+model AgeCategory {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  minAge    Int      @map("min_age")
+  maxAge    Int?     @map("max_age")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name).
+  /// Never pass it in create/update data — the database computes it. List
+  /// endpoints filter and ORDER BY it, so names sort the TZ 8.5 way
+  /// instead of by code point.
+  nameKey   String?  @map("name_key")
+  /// Optimistic locking (TZ 6.1): bumped inside the same UPDATE that
+  /// filters on it, so a lost update is impossible rather than unlikely.
+  /// A mismatch is 409 VERSION_CONFLICT.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("age_categories")
+}
+
+/// TZ M1.3 "to'lov usuli" — how money arrived (cash, card, transfer...).
+/// Carries no amounts and no behaviour: a payment references it, and
+/// archiving one must not break historical payments (TZ M1.3 KERAK).
+model PaymentMethod {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name).
+  /// Never pass it in create/update data — the database computes it. List
+  /// endpoints filter and ORDER BY it, so names sort the TZ 8.5 way
+  /// instead of by code point.
+  nameKey   String?  @map("name_key")
+  /// Optimistic locking (TZ 6.1): bumped inside the same UPDATE that
+  /// filters on it, so a lost update is impossible rather than unlikely.
+  /// A mismatch is 409 VERSION_CONFLICT.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("payment_methods")
+}
+
+/// TZ M1.3 "bayramlar". Lesson materialization skips these dates (T08 /
+/// TZ M4.3). A null `branchId` means the whole organization is closed.
+model Holiday {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
+  date      DateTime @db.Date
+  isActive  Boolean  @default(true) @map("is_active")
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name).
+  /// Never pass it in create/update data — the database computes it. List
+  /// endpoints filter and ORDER BY it, so names sort the TZ 8.5 way
+  /// instead of by code point.
+  nameKey   String?  @map("name_key")
+  /// Optimistic locking (TZ 6.1): bumped inside the same UPDATE that
+  /// filters on it, so a lost update is impossible rather than unlikely.
+  /// A mismatch is 409 VERSION_CONFLICT.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  branch Branch? @relation(fields: [tenantId, branchId], references: [tenantId, id])
+
+  @@index([tenantId, date])
+  @@map("holidays")
+}
+
+/// TZ M1.4 "O'qituvchi profili". Separate from `users` because it exists
+/// only for employees who teach, and because availability and salary
+/// settings (R1) hang off it. R0 carries the teaching qualifications only.
+model TeacherProfile {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  notes     String?
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id])
+  user        User                @relation(fields: [tenantId, userId], references: [tenantId, id])
+  disciplines TeacherDiscipline[]
+  levels      TeacherLevel[]
+
+  /// One profile per employee; `tenantId` is in the key so the composite
+  /// FK below has something to point at.
+  @@unique([tenantId, userId])
+  @@unique([tenantId, id])
+  @@map("teacher_profiles")
+}
+
+model TeacherDiscipline {
+  id               String @id @db.Uuid
+  tenantId         String @map("tenant_id") @db.Uuid
+  teacherProfileId String @map("teacher_profile_id") @db.Uuid
+  disciplineId     String @map("discipline_id") @db.Uuid
+
+  teacherProfile TeacherProfile @relation(fields: [tenantId, teacherProfileId], references: [tenantId, id])
+  discipline     Discipline     @relation(fields: [tenantId, disciplineId], references: [tenantId, id])
+
+  @@unique([tenantId, teacherProfileId, disciplineId])
+  @@index([tenantId, disciplineId])
+  @@map("teacher_disciplines")
+}
+
+model TeacherLevel {
+  id               String @id @db.Uuid
+  tenantId         String @map("tenant_id") @db.Uuid
+  teacherProfileId String @map("teacher_profile_id") @db.Uuid
+  levelId          String @map("level_id") @db.Uuid
+
+  teacherProfile TeacherProfile @relation(fields: [tenantId, teacherProfileId], references: [tenantId, id])
+  level          Level          @relation(fields: [tenantId, levelId], references: [tenantId, id])
+
+  @@unique([tenantId, teacherProfileId, levelId])
+  @@index([tenantId, levelId])
+  @@map("teacher_levels")
 }
