@@ -2,7 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, type JSX } from 'react';
-import { ApiError, apiFetch } from '@/lib/api';
+import { ApiError } from '@/lib/api';
+import { login as loginRequest } from '@/lib/auth';
 import { t } from '@/lib/i18n';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -33,10 +34,7 @@ export default function LoginPage(): JSX.Element {
     setSubmitting(true);
 
     try {
-      await apiFetch('/api/v1/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ tenant_slug: DEFAULT_TENANT_SLUG, login, password }),
-      });
+      await loginRequest(DEFAULT_TENANT_SLUG, login, password);
       router.replace('/');
     } catch (caught) {
       setError(errorMessageFor(caught));
