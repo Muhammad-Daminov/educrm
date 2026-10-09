@@ -1,18 +1,19 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './config/env.validation';
-import {
-  assignRequestId,
-  RequestIdMiddleware,
-  resolveRequestId,
-} from './common/middleware/request-id.middleware';
+import { assignRequestId, RequestIdMiddleware, resolveRequestId } from './common/middleware/request-id.middleware';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './database/database.module';
+import { RedisModule } from './redis/redis.module';
 import { BranchesModule } from './branches/branches.module';
-import { resolveTenantFromHeader } from './tenant/tenant-header.resolver';
+import { AuthModule } from './auth/auth.module';
+import { resolveAuthFromAccessToken } from './auth/access-token-context.resolver';
+import { CsrfGuard } from './auth/guards/csrf.guard';
+import { PermissionsGuard } from './auth/guards/permissions.guard';
 
 @Module({
   imports: [
@@ -25,12 +26,12 @@ import { resolveTenantFromHeader } from './tenant/tenant-header.resolver';
       middleware: {
         mount: true,
         setup: (cls, req: Request, res: Response) => {
-          // Must run before resolveTenantFromHeader: that can throw (missing/invalid
-          // tenant), and RequestIdMiddleware (which normally assigns this) never gets
-          // to run if `next()` isn't reached, which would otherwise leave error
-          // responses without a request id.
+          // Must run before resolveAuthFromAccessToken: RequestIdMiddleware
+          // (which normally assigns this) never gets to run if a later
+          // guard rejects the request first, which would otherwise leave
+          // error responses without a request id.
           assignRequestId(req, res);
-          resolveTenantFromHeader(cls, req);
+          resolveAuthFromAccessToken(cls, req);
         },
       },
     }),
@@ -49,7 +50,13 @@ import { resolveTenantFromHeader } from './tenant/tenant-header.resolver';
     }),
     HealthModule,
     DatabaseModule,
+    RedisModule,
+    AuthModule,
     BranchesModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
 })
 export class AppModule implements NestModule {

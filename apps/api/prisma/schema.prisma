@@ -11,9 +11,16 @@ datasource db {
 model Tenant {
   id        String   @id @db.Uuid
   name      String
+  slug      String   @unique
   createdAt DateTime @default(now()) @map("created_at")
 
-  branches Branch[]
+  branches        Branch[]
+  users           User[]
+  sessions        Session[]
+  roles           Role[]
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+  userBranches    UserBranch[]
 
   @@map("tenants")
 }
@@ -29,8 +36,129 @@ model Branch {
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  userBranches UserBranch[]
 
   @@unique([tenantId, code])
   @@map("branches")
+}
+
+enum PermissionScope {
+  own
+  branch
+  all
+}
+
+/// Global catalog, no tenant_id, no RLS — app_user has SELECT only (see migration).
+model Permission {
+  code        String @id
+  description String
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model User {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  fullName     String   @map("full_name")
+  phone        String?
+  email        String?
+  passwordHash String   @map("password_hash")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  sessions     Session[]
+  userRoles    UserRole[]
+  userBranches UserBranch[]
+
+  @@unique([tenantId, phone])
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+/// One row per issued refresh token (rotation chain via family_id). Rows are
+/// never deleted, only soft-revoked (revoked_at) — reuse of an already-
+/// revoked token's hash is how reuse detection recognizes a replayed token.
+model Session {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  familyId  String    @map("family_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime  @map("expires_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([tenantId, tokenHash])
+  @@index([tenantId, familyId])
+  @@index([tenantId, userId])
+  @@map("sessions")
+}
+
+model Role {
+  id       String  @id @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  code     String
+  name     String
+  isSystem Boolean @default(false) @map("is_system")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([tenantId, code])
+  @@map("roles")
+}
+
+model RolePermission {
+  id             String          @id @db.Uuid
+  tenantId       String          @map("tenant_id") @db.Uuid
+  roleId         String          @map("role_id") @db.Uuid
+  permissionCode String          @map("permission_code")
+  scope          PermissionScope
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionCode], references: [code])
+
+  @@unique([tenantId, roleId, permissionCode])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@unique([tenantId, userId, roleId])
+  @@map("user_roles")
+}
+
+model UserBranch {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([tenantId, userId, branchId])
+  @@map("user_branches")
 }
