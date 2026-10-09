@@ -1,55 +1,20 @@
 /**
  * `pnpm --filter api seed:owner --tenant <slug> --name <full name> --phone <phone>
- *   --password <password> [--email <email>]`
+ *   --password <password>`
  *
- * Idempotent bootstrap for a brand-new tenant (step 0.3 requirement H):
- * creates the tenant if it doesn't exist, clones the `owner` role template
- * (role-templates.ts) into tenant-scoped `roles`/`role_permissions` rows if
- * the tenant has no `owner` role yet, and upserts a user with that role.
+ * Idempotent bootstrap for a brand-new tenant (step 0.3 requirement H): see
+ * src/auth/seed-owner.ts for what this actually does — that module is
+ * shared with the auth integration tests, which need the same bootstrap to
+ * seed their fixtures.
  *
  * Deliberately NOT a Nest provider/CLI command: this runs standalone (via
  * tsx) before any tenant exists, so there's no access token yet to
- * establish tenant context through the normal request path. It uses the
- * same `createTenantScopedClient` + `tenantDb.transaction` the running API
- * uses, with the tenant context supplied directly.
- *
- * Finding/creating the tenant row itself needs the `migrator` role: per
- * the step 0.2 grants, `app_user` has SELECT-only on `tenants` (see
- * prisma/migrations/20261008121645_init/migration.sql) so that the running
- * API can never create or rename a tenant — only a migration/ops task can.
- * Everything after that (role template clone, owner user) runs as
- * `app_user` through the normal tenant-scoped client, same as request code.
+ * establish tenant context through the normal request path.
  */
 import { PrismaClient } from '@prisma/client';
-import { Client as PgClient } from 'pg';
-import * as argon2 from 'argon2';
-import { uuidv7 } from '@educrm/shared';
-import { createTenantScopedClient } from '../src/database/tenant-prisma.provider';
 import { normalizePhone } from '../src/auth/phone.util';
-import { ROLE_TEMPLATES } from '../src/auth/role-templates';
+import { findOrCreateTenant, seedOwnerUser } from '../src/auth/seed-owner';
 import { MIN_PASSWORD_LENGTH } from '../src/auth/auth.constants';
-
-async function findOrCreateTenant(slug: string): Promise<{ id: string; created: boolean }> {
-  const migrationUrl = process.env.DATABASE_MIGRATION_URL;
-  if (!migrationUrl) {
-    throw new Error('DATABASE_MIGRATION_URL is not set');
-  }
-
-  const pg = new PgClient({ connectionString: migrationUrl });
-  await pg.connect();
-  try {
-    const existing = await pg.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [slug]);
-    if (existing.rows[0]) {
-      return { id: existing.rows[0].id, created: false };
-    }
-
-    const id = uuidv7();
-    await pg.query('INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)', [id, slug, slug]);
-    return { id, created: true };
-  } finally {
-    await pg.end();
-  }
-}
 
 interface Args {
   tenant: string;
@@ -97,7 +62,12 @@ async function main(): Promise<void> {
     throw new Error(`--phone "${args.phone}" is not a valid UZ phone number`);
   }
 
-  const { id: tenantId, created } = await findOrCreateTenant(args.tenant);
+  const migrationUrl = process.env.DATABASE_MIGRATION_URL;
+  if (!migrationUrl) {
+    throw new Error('DATABASE_MIGRATION_URL is not set');
+  }
+
+  const { id: tenantId, created } = await findOrCreateTenant(migrationUrl, args.tenant);
   console.log(
     created
       ? `Created tenant "${args.tenant}" (${tenantId}).`
@@ -105,73 +75,13 @@ async function main(): Promise<void> {
   );
 
   const prisma = new PrismaClient();
-
   try {
-    const tenantDb = createTenantScopedClient(prisma, { currentTenantId: tenantId });
-
-    const passwordHash = await argon2.hash(args.password, { type: argon2.argon2id });
-    const ownerTemplate = ROLE_TEMPLATES.find((template) => template.code === 'owner');
-    if (!ownerTemplate) {
-      throw new Error('No "owner" role template found in role-templates.ts');
-    }
-
-    const result = await tenantDb.transaction(async (tx) => {
-      let role = await tx.role.findUnique({
-        where: { tenantId_code: { tenantId, code: 'owner' } },
-      });
-
-      if (!role) {
-        role = await tx.role.create({
-          data: {
-            id: uuidv7(),
-            tenantId,
-            code: ownerTemplate.code,
-            name: ownerTemplate.name,
-            isSystem: true,
-          },
-        });
-        await tx.rolePermission.createMany({
-          data: ownerTemplate.permissions.map((permission) => ({
-            id: uuidv7(),
-            tenantId,
-            roleId: role!.id,
-            permissionCode: permission.code,
-            scope: permission.scope,
-          })),
-        });
-      }
-
-      const user = await tx.user.upsert({
-        where: {
-          tenantId_phone: { tenantId, phone: normalizedPhone },
-        },
-        create: {
-          id: uuidv7(),
-          tenantId,
-          fullName: args.name,
-          phone: normalizedPhone,
-          passwordHash,
-          isActive: true,
-        },
-        update: {
-          fullName: args.name,
-          passwordHash,
-          isActive: true,
-        },
-      });
-
-      await tx.userRole.upsert({
-        where: { tenantId_userId_roleId: { tenantId, userId: user.id, roleId: role.id } },
-        create: { id: uuidv7(), tenantId, userId: user.id, roleId: role.id },
-        update: {},
-      });
-
-      return { user, role };
+    const result = await seedOwnerUser(prisma, tenantId, {
+      fullName: args.name,
+      phone: normalizedPhone,
+      password: args.password,
     });
-
-    console.log(
-      `Owner user ready: id=${result.user.id} role=${result.role.code} phone=${normalizedPhone}`,
-    );
+    console.log(`Owner user ready: id=${result.userId} role=owner phone=${normalizedPhone}`);
   } finally {
     await prisma.$disconnect();
   }
