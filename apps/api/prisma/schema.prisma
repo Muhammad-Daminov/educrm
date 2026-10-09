@@ -148,6 +148,35 @@ model UserRole {
   @@map("user_roles")
 }
 
+/// Append-only audit trail, TZ M11.3 format. No tenant relation on purpose:
+/// the table is RANGE-partitioned by month, and an FK from it would have to
+/// be re-validated on every partition attach while buying nothing — the log
+/// must survive and stay readable regardless of what happens to the rows it
+/// refers to.
+///
+/// `occurred_at` is in the primary key because Postgres requires the
+/// partition key in every unique constraint. Writes go through AuditService;
+/// UPDATE and DELETE are impossible (trigger + REVOKE, see the migration).
+model AuditLog {
+  id         String   @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  diff       Json?
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  requestId  String?  @map("request_id")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  @@id([id, occurredAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@index([tenantId, actorId, occurredAt(sort: Desc)])
+  @@map("audit_log")
+}
+
 model UserBranch {
   id        String   @id @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid

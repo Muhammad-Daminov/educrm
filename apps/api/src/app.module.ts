@@ -6,11 +6,13 @@ import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './config/env.validation';
 import { assignRequestId, RequestIdMiddleware, resolveRequestId } from './common/middleware/request-id.middleware';
+import { captureRequestMeta } from './common/request-meta';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { BranchesModule } from './branches/branches.module';
 import { AuthModule } from './auth/auth.module';
+import { AuditModule } from './audit/audit.module';
 import { resolveAuthFromAccessToken } from './auth/access-token-context.resolver';
 import { CsrfGuard } from './auth/guards/csrf.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
@@ -30,7 +32,11 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
           // (which normally assigns this) never gets to run if a later
           // guard rejects the request first, which would otherwise leave
           // error responses without a request id.
-          assignRequestId(req, res);
+          const requestId = assignRequestId(req, res);
+          // Captured here for the same reason: a rejected request can still
+          // produce an audit row, and TZ M11.3 wants ip/user_agent/
+          // request_id on it.
+          captureRequestMeta(cls, req, requestId);
           resolveAuthFromAccessToken(cls, req);
         },
       },
@@ -52,6 +58,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
     DatabaseModule,
     RedisModule,
     AuthModule,
+    AuditModule,
     BranchesModule,
   ],
   providers: [
