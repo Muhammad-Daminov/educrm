@@ -56,3 +56,53 @@ authoritative and timing is not. TZ §12 phase 0 also lists "monitoring" and
 "CI/CD" which were never done in 0.1 — folded into 0.5 rather than
 backdated. Whether `revenue_percent` payroll is accrual- or cash-based is
 still unanswered in TZ M7.1 and is flagged on task 6.1.
+
+## T04 — Foundation finish (2026-10-09)
+
+**Done:** `Money` in packages/shared (bigint tiyin; `mulRatio` takes an
+integer ratio and rounds half away from zero; `allocate` gives the division
+remainder to the last part so splits sum back exactly, proved over every
+amount in -500..500 tiyin × 1..9 parts; `format()` per UX §7; `toJSON()` as
+a tiyin string per TZ 6.1) plus the `educrm/no-money-number-arithmetic` lint
+rule TZ M6.1.5 demands — type-aware, error-level for every package, 22
+RuleTester cases. `audit_log` with TZ M11.3's exact format, append-only via
+trigger *and* REVOKE, monthly partitions, standard RLS, and an AuditService
+whose `record(entry, tx)` commits with the change it describes.
+`outbox_events` + the APP_ROLE=api|worker split, with retry/backoff/
+dead-letter owned by the outbox row rather than BullMQ and idempotency by
+event id. GitHub Actions CI (lint, typecheck, test) + `postinstall: prisma
+generate`. The UX §2 app shell: permission-built sidebar, topbar, branch
+selector, Ctrl+K palette, toast, and the §3.8 loading/empty/error/forbidden
+states. Cleanup: named wildcard routes (0 boot warnings, was 3) and 200 on
+the auth POSTs. 204 tests pass (49 web, 96 api, 29 shared, 22 config, 8
+pre-existing web), and the shell was driven in a real headless Chrome —
+login, permission-filtered menus for owner vs administrator, Ctrl+K filter
+and navigate, sidebar collapse persistence, branch selection persistence,
+and `/settings` as an administrator rendering "Ruxsat yo'q" instead of 404.
+
+**Decisions:** Retries live on the outbox row, not in BullMQ (jobs get
+`attempts: 1`), so one place decides when an event is tried again; job ids
+are `<eventId>-attempt-<n>` because BullMQ remembers completed ids and would
+drop a retry reusing the bare one. An event type with no registered handler
+retries and then dead-letters rather than being marked done — silently
+dropping a domain event is how a charge never gets posted. `audit_log` has
+no DEFAULT partition on purpose (see docs/QUESTIONS.md). The dispatcher
+polls per tenant rather than taking a BYPASSRLS role. The dashboard lives at
+`/`, not UX §1.1's `/home`, since UX §0.3 puts URL structure outside what is
+copied from the reference. R2 sections (Sotuv, Maosh, Kommunikatsiya,
+Hisobotlar) are absent from the menu rather than present and dead. The old
+`(app)/page.tsx` profile screen moved to `/profile`, reachable from the
+avatar menu. `destructive` was added to the Tailwind theme — it was
+referenced by the existing login page but defined nowhere, so
+`text-destructive` had been doing nothing.
+
+**Open questions:** Six judgment calls recorded in docs/QUESTIONS.md, of
+which two want attention before R0 ships: Uzbek text still uses ASCII
+apostrophes where UX §8 wants `oʻ`/`gʻ` (one decision, two files), and
+`audit_log`'s partition runway ends 2029-10 with no scheduler calling
+`ensure_audit_log_partition`. Also deferred by scope, not oversight: the
+topbar's global search is only a palette trigger until there are entities to
+search (T06/T07); the bare-key shortcuts in UX §2.4 (`/`, `N`, `G`+letter,
+`J`/`K`) need the list screens they act on; chat and notification bells are
+out of R0. The toast component ships with no caller yet — the first real one
+is T05's create/edit drawers.

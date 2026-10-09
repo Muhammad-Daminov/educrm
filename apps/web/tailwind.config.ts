@@ -17,6 +17,13 @@ const config: Config = {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
         },
+        // Referenced by the login page's error text and the UX §3.8 error
+        // state; the variables existed nowhere, so `text-destructive` was
+        // silently doing nothing.
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

@@ -70,3 +70,70 @@ This is the only RLS bypass in the schema.
 `DEFAULT_TENANT_SLUG` "for now". Implemented as
 `NEXT_PUBLIC_DEFAULT_TENANT_SLUG`. Real tenant selection (subdomain, or a
 slug field on the login form) is out of scope for step 0.3.
+
+## T04 — foundation finish
+
+### Uzbek apostrophes are ASCII, not the proper modifier letters
+**Contradiction:** UX §8 requires "Lotin yozuvi, o' va g' to'g'ri belgilar
+bilan" — the real characters in `oʻ`/`gʻ`. Everything shipped so far
+(`lib/i18n.ts`, `Money.format()`'s `so'm` suffix) uses the ASCII `'`.
+**Decision (deferred, not skipped):** stay ASCII for now, consistently,
+rather than mix the two. Switching needs one decision — U+02BB MODIFIER
+LETTER TURNED COMMA (orthographically correct) vs U+2019 RIGHT SINGLE
+QUOTATION MARK (what the spec PDF itself appears to use) — and then it is
+`apps/web/lib/i18n.ts` plus `CURRENCY_SUFFIX` in `packages/shared/src/
+money.ts`. The command palette already normalizes every apostrophe variant
+away before matching, so search cannot break either way.
+**Revisit:** before any customer-facing release — it is a correctness
+issue in the language, not a style preference.
+
+### Sidebar collapse and branch selection live in localStorage
+**Contradiction:** UX §2.2 says the collapsed sidebar state is "foydalanuvchi
+profilida saqlanadi — qurilmalar orasida bir xil" (on the user profile, same
+across devices). The branch context is described as global in the same way.
+**Decision:** both are in `localStorage`, per device, because there is no
+user-settings endpoint until T05. Keys are scoped by user id
+(`educrm.branch.<userId>`) so switching accounts on a shared machine cannot
+inherit the previous user's branch.
+**Revisit:** T05, which adds the employee/settings surface — moving these to
+the server is then a small change behind the same provider API.
+
+### A stale branch selection is dropped rather than honoured
+**Judgment call:** a branch id persisted locally may name a branch the user
+has since lost access to. `BranchProvider` ignores a stored id that is not
+in the `/auth/me` branch list and falls back to "Barcha filiallar", rather
+than showing a branch they can no longer use. The backend scope check is
+unaffected either way (CLAUDE.md: permission checks are backend-only).
+
+### audit_log partitions run out in 2029-10
+**Scope note:** the migration pre-creates 36 monthly partitions and
+deliberately creates no DEFAULT partition — emptying one later needs a
+DELETE, which the append-only trigger correctly refuses, so a missing month
+has to fail loudly instead of silently absorbing rows.
+`ensure_audit_log_partition(date)` is the idempotent maintenance entry
+point; it must be called (as `migrator` — it is DDL) on a schedule before
+the runway ends. No scheduler owns it yet.
+**Revisit:** T12 (deployment), or sooner if an ops cron lands first.
+
+### The outbox dispatcher polls once per tenant per tick
+**Judgment call:** `outbox_events` carries FORCE row level security like
+every other tenant table, so no connection — not even the table owner's —
+can select pending work across all tenants at once. The alternatives were a
+BYPASSRLS role or a second SECURITY DEFINER escape hatch alongside
+`auth_find_user`; instead the dispatcher enumerates `tenants` (the one table
+with no tenant_id and no RLS) and claims inside each tenant's own context.
+Cost is linear in tenant count: nothing at R0's single pilot tenant, wrong
+at several hundred.
+**Revisit:** before onboarding tenants in bulk. LISTEN/NOTIFY, or a
+tenant-agnostic "has pending work" signal, replaces the sweep without giving
+up the isolation guarantee.
+
+### An unknown in-app path is a client-side 404, not an HTTP 404
+**Judgment call:** UX §1.2 requires that a section the user lacks permission
+for shows "Ruxsat yo'q" rather than 404 — which means the decision needs the
+user's permissions, which the client has and the server does not (the
+session lives in an httpOnly cookie read by the API, not by Next). So the
+catch-all route resolves access in the browser: unknown paths call
+`notFound()` and render Next's 404 UI, but the document itself was already
+served as 200. Acceptable because every one of these routes is behind a
+login and none is indexable.

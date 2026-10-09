@@ -1,7 +1,7 @@
 import type { JSX, ReactNode } from 'react';
-import { AppHeader } from '@/components/app-header';
+import { AppShell } from '@/components/app-shell';
 import { AuthProvider } from '@/components/auth-provider';
-import { t } from '@/lib/i18n';
+import { LoadingState } from '@/components/states/loading-state';
 
 /**
  * Everything in this route group requires a session. `/login` deliberately
@@ -12,15 +12,12 @@ export default function ProtectedLayout({ children }: { children: ReactNode }): 
   return (
     <AuthProvider
       fallback={
-        <main className="flex min-h-screen items-center justify-center">
-          <p className="text-sm text-muted-foreground">{t('header.loading')}</p>
+        <main className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
+          <LoadingState rows={6} />
         </main>
       }
     >
-      <div className="flex min-h-screen flex-col">
-        <AppHeader />
-        <div className="flex-1 p-6">{children}</div>
-      </div>
+      <AppShell>{children}</AppShell>
     </AuthProvider>
   );
 }

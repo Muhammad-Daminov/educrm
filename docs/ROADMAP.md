@@ -12,7 +12,7 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
 
 - [x] T01–T03 Skeleton, RLS, auth + RBAC (done)
 
-- [ ] T04 Foundation finish
+- [x] T04 Foundation finish
   Money value object in packages/shared (bigint, add/sub/mul by ratio, allocate with
   remainder to last item, format "1 250 000 so'm"); lint rule banning number math on money.
   audit_log table (append-only trigger) + AuditService.
