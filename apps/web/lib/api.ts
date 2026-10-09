@@ -12,6 +12,23 @@ export interface ApiErrorBody {
   request_id: string;
 }
 
+/**
+ * TZ 6.2: every success response is `{ data, meta? }`. `apiFetch` returns
+ * `data`; `apiFetchEnveloped` returns both, for list screens that need
+ * `meta.total` (the record count in the P1 header) alongside the rows.
+ */
+export interface ResponseMeta {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  next_cursor?: string | null;
+}
+
+export interface Envelope<T> {
+  data: T;
+  meta?: ResponseMeta;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -43,7 +60,7 @@ async function rawFetch(path: string, init: RequestInit): Promise<Response> {
   return fetch(path, { ...init, headers, credentials: 'same-origin' });
 }
 
-async function parseOrThrow<T>(res: Response): Promise<T> {
+async function parseOrThrow<T>(res: Response): Promise<Envelope<T>> {
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const errorBody = (body as { error?: ApiErrorBody } | null)?.error ?? {
@@ -54,7 +71,19 @@ async function parseOrThrow<T>(res: Response): Promise<T> {
     };
     throw new ApiError(res.status, errorBody);
   }
-  return body as T;
+  const parsed = body as Envelope<T> | null;
+  if (parsed === null || !('data' in parsed)) {
+    // A 2xx that isn't the TZ 6.2 envelope means the API and this client
+    // disagree about the contract — surfacing it as an error beats handing
+    // callers `undefined` and failing somewhere further away.
+    throw new ApiError(res.status, {
+      code: 'MALFORMED_RESPONSE',
+      message: 'Response did not match the { data, meta } envelope',
+      details: null,
+      request_id: res.headers.get('x-request-id') ?? '',
+    });
+  }
+  return parsed;
 }
 
 /**
@@ -87,7 +116,10 @@ const NO_SILENT_REFRESH = new Set([
  * propagates as an ApiError — callers that need a redirect (the protected
  * layout) catch that and send the user to /login themselves.
  */
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiFetchEnveloped<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<Envelope<T>> {
   const first = await rawFetch(path, init);
 
   if (first.status !== 401 || NO_SILENT_REFRESH.has(path)) {
@@ -101,4 +133,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   const retried = await rawFetch(path, init);
   return parseOrThrow<T>(retried);
+}
+
+/** The common case: the payload, with the envelope unwrapped. */
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { data } = await apiFetchEnveloped<T>(path, init);
+  return data;
 }

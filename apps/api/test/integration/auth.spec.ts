@@ -280,7 +280,8 @@ describe('Auth + RBAC (step 0.3)', () => {
 
       const res = await request(server).get('/api/v1/branches').set('Cookie', cookieHeader(jar));
       expect(res.status).toBe(200);
-      for (const branch of res.body as { name: string }[]) {
+      // TZ 6.2 envelope: the rows live under `data`.
+      for (const branch of (res.body as { data: { name: string }[] }).data) {
         expect(branch.name).not.toBe('Tenant B HQ');
       }
     });

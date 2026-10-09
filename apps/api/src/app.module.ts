@@ -1,6 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
@@ -17,6 +17,7 @@ import { OutboxModule } from './outbox/outbox.module';
 import { resolveAuthFromAccessToken } from './auth/access-token-context.resolver';
 import { CsrfGuard } from './auth/guards/csrf.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
+import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 
 @Module({
   imports: [
@@ -71,6 +72,9 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    // TZ 6.2: every success response is `{ data, meta? }`. Here rather than
+    // in main.ts so integration tests see the real wire format.
+    { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
   ],
 })
 export class AppModule implements NestModule {

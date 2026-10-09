@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { ApiError, apiFetch } from '../lib/api';
+import { ApiError, apiFetch, apiFetchEnveloped } from '../lib/api';
 import { buildLoginPayload, fetchMe, login } from '../lib/auth';
 
 /**
@@ -40,13 +40,14 @@ function mockFetchSequence(responses: MockResponse[]): void {
         method: (init?.method ?? 'GET').toUpperCase(),
         body: typeof init?.body === 'string' ? init.body : undefined,
       });
-      const next: MockResponse =
-        responses[index] ?? responses[responses.length - 1] ?? { status: 500 };
+      const next: MockResponse = responses[index] ??
+        responses[responses.length - 1] ?? { status: 500 };
       index += 1;
       return Promise.resolve({
         ok: next.status >= 200 && next.status < 300,
         status: next.status,
         json: () => Promise.resolve(next.body ?? {}),
+        headers: new Headers(),
       } as Response);
     }),
   );
@@ -69,7 +70,7 @@ describe('login request payload matches the API DTO', () => {
   });
 
   it('sends that payload, snake_case intact, to POST /api/v1/auth/login', async () => {
-    mockFetchSequence([{ status: 200, body: { ok: true } }]);
+    mockFetchSequence([{ status: 200, body: { data: { ok: true } } }]);
 
     await login('demo', '901234567', 'Educrm2026!');
 
@@ -91,7 +92,12 @@ describe('login request payload matches the API DTO', () => {
 describe('silent refresh is scoped to session-backed endpoints', () => {
   it('does NOT refresh or retry when /auth/login returns 401', async () => {
     mockFetchSequence([
-      { status: 401, body: { error: { code: 'INVALID_CREDENTIALS', message: 'bad', details: null, request_id: 'r1' } } },
+      {
+        status: 401,
+        body: {
+          error: { code: 'INVALID_CREDENTIALS', message: 'bad', details: null, request_id: 'r1' },
+        },
+      },
     ]);
 
     await expect(login('demo', '901234567', 'wrong-password')).rejects.toBeInstanceOf(ApiError);
@@ -103,7 +109,12 @@ describe('silent refresh is scoped to session-backed endpoints', () => {
 
   it('surfaces the login 401 as INVALID_CREDENTIALS rather than a refresh error', async () => {
     mockFetchSequence([
-      { status: 401, body: { error: { code: 'INVALID_CREDENTIALS', message: 'bad', details: null, request_id: 'r1' } } },
+      {
+        status: 401,
+        body: {
+          error: { code: 'INVALID_CREDENTIALS', message: 'bad', details: null, request_id: 'r1' },
+        },
+      },
     ]);
 
     await expect(login('demo', '901234567', 'wrong-password')).rejects.toMatchObject({
@@ -114,20 +125,40 @@ describe('silent refresh is scoped to session-backed endpoints', () => {
 
   it('does NOT refresh or retry when /auth/logout returns 401', async () => {
     mockFetchSequence([
-      { status: 401, body: { error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' } } },
+      {
+        status: 401,
+        body: {
+          error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' },
+        },
+      },
     ]);
 
-    await expect(
-      apiFetch('/api/v1/auth/logout', { method: 'POST' }),
-    ).rejects.toBeInstanceOf(ApiError);
+    await expect(apiFetch('/api/v1/auth/logout', { method: 'POST' })).rejects.toBeInstanceOf(
+      ApiError,
+    );
     expect(calls.map((call) => call.url)).toEqual(['/api/v1/auth/logout']);
   });
 
   it('DOES refresh and retry once when /auth/me returns 401', async () => {
     mockFetchSequence([
-      { status: 401, body: { error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' } } },
-      { status: 200, body: { ok: true } },
-      { status: 200, body: { user: { id: 'u1', fullName: 'A', phone: null, email: null }, roles: [], permissions: [], branches: [] } },
+      {
+        status: 401,
+        body: {
+          error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' },
+        },
+      },
+      { status: 200, body: { data: { ok: true } } },
+      {
+        status: 200,
+        body: {
+          data: {
+            user: { id: 'u1', fullName: 'A', phone: null, email: null },
+            roles: [],
+            permissions: [],
+            branches: [],
+          },
+        },
+      },
     ]);
 
     const me = await fetchMe();
@@ -142,8 +173,18 @@ describe('silent refresh is scoped to session-backed endpoints', () => {
 
   it('gives up after one failed refresh instead of looping', async () => {
     mockFetchSequence([
-      { status: 401, body: { error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' } } },
-      { status: 401, body: { error: { code: 'REFRESH_TOKEN_INVALID', message: 'no', details: null, request_id: 'r2' } } },
+      {
+        status: 401,
+        body: {
+          error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' },
+        },
+      },
+      {
+        status: 401,
+        body: {
+          error: { code: 'REFRESH_TOKEN_INVALID', message: 'no', details: null, request_id: 'r2' },
+        },
+      },
     ]);
 
     await expect(fetchMe()).rejects.toBeInstanceOf(ApiError);
@@ -153,8 +194,63 @@ describe('silent refresh is scoped to session-backed endpoints', () => {
 
 describe('CSRF header', () => {
   it('is omitted on login (the API skips CSRF there; no cookie exists yet)', async () => {
-    mockFetchSequence([{ status: 200, body: { ok: true } }]);
+    mockFetchSequence([{ status: 200, body: { data: { ok: true } } }]);
     await login('demo', '901234567', 'Educrm2026!');
     expect(calls).toHaveLength(1);
+  });
+});
+
+/**
+ * TZ 6.2: `{ "data": ..., "meta": { ... } }`. The envelope is unwrapped in
+ * one place (lib/api.ts) so no screen has to know about it, and a 2xx that
+ * isn't enveloped is an error rather than an undefined handed downstream.
+ */
+describe('TZ 6.2 response envelope', () => {
+  it('unwraps data for the caller', async () => {
+    mockFetchSequence([{ status: 200, body: { data: { id: 'd1', name: 'Ingliz tili' } } }]);
+
+    const discipline = await apiFetch<{ id: string; name: string }>('/api/v1/disciplines/d1');
+
+    expect(discipline).toEqual({ id: 'd1', name: 'Ingliz tili' });
+  });
+
+  it('exposes meta alongside data for list screens', async () => {
+    mockFetchSequence([
+      { status: 200, body: { data: [{ id: 'd1' }], meta: { total: 42, limit: 50, offset: 0 } } },
+    ]);
+
+    const result = await apiFetchEnveloped<{ id: string }[]>('/api/v1/disciplines');
+
+    expect(result.data).toHaveLength(1);
+    expect(result.meta?.total).toBe(42);
+  });
+
+  it('treats a 2xx without the envelope as a contract violation', async () => {
+    mockFetchSequence([{ status: 200, body: [{ id: 'd1' }] }]);
+
+    await expect(apiFetch('/api/v1/disciplines')).rejects.toMatchObject({
+      body: { code: 'MALFORMED_RESPONSE' },
+    });
+  });
+
+  it('still reads errors from the error half of the envelope', async () => {
+    mockFetchSequence([
+      {
+        status: 409,
+        body: {
+          error: {
+            code: 'VERSION_CONFLICT',
+            message: 'changed',
+            details: null,
+            request_id: 'r9',
+          },
+        },
+      },
+    ]);
+
+    await expect(apiFetch('/api/v1/disciplines/d1', { method: 'PATCH' })).rejects.toMatchObject({
+      status: 409,
+      body: { code: 'VERSION_CONFLICT', request_id: 'r9' },
+    });
   });
 });
