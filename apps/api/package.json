@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "nest start --watch",
     "dev:worker": "APP_ROLE=worker nest start --watch",
     "build": "nest build",

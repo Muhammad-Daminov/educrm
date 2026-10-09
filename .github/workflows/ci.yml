@@ -1,0 +1,53 @@
+name: CI
+
+# `push` is not restricted to main on purpose: this project commits straight
+# to a release branch (r0) rather than through pull requests, so gating CI on
+# PRs alone would mean it never ran.
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch makes the previous run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint + typecheck + test
+    runs-on: ubuntu-latest
+    # The integration tests start real Postgres and Redis containers through
+    # Testcontainers (apps/api/test/integration/setup.ts), which is slower
+    # than a unit suite but is the whole point — they prove the actual
+    # migration files, RLS policies and triggers work.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # Version comes from the root package.json "packageManager" field,
+        # so it can never drift from what developers run locally.
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Also generates the Prisma client (apps/api postinstall) — it lives in
+      # node_modules and is not committed, so typecheck would otherwise fail
+      # against last release's client.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
