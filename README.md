@@ -24,18 +24,23 @@ pnpm dev
 ```
 
 - API: http://localhost:4000/api/v1/health/ready
-- Web: http://localhost:3000
+- Web: http://localhost:3100
 
 ### Ports
 
 Postgres and Redis are published on non-default host ports to avoid clashing with any
-natively installed Postgres/Redis on the host.
+natively installed Postgres/Redis on the host. The web dev server listens on
+**3100**, not Next's default 3000, which belongs to another project on the
+development machine — it is set in `apps/web/package.json` (`dev` and `start`)
+and is not expected to change.
 
 | Service | Container port | Host port |
 | --- | --- | --- |
 | Postgres | 5432 | 5433 |
 | PgBouncer | 5432 | 6433 |
 | Redis | 6379 | 6380 |
+| Web (dev server) | — | 3100 |
+| API | — | 4000 |
 
 ## Database: roles, migrations, RLS
 
@@ -113,7 +118,7 @@ authenticated session.
 
 | Command | Description |
 | --- | --- |
-| `pnpm dev` | Run api (:4000) + web (:3000) in watch mode |
+| `pnpm dev` | Run api (:4000) + web (:3100) in watch mode |
 | `pnpm build` | Build all apps/packages |
 | `pnpm lint` | Lint all apps/packages |
 | `pnpm typecheck` | Type-check all apps/packages |
