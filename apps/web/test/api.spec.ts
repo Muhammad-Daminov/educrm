@@ -69,7 +69,7 @@ describe('login request payload matches the API DTO', () => {
   });
 
   it('sends that payload, snake_case intact, to POST /api/v1/auth/login', async () => {
-    mockFetchSequence([{ status: 201, body: { ok: true } }]);
+    mockFetchSequence([{ status: 200, body: { ok: true } }]);
 
     await login('demo', '901234567', 'Educrm2026!');
 
@@ -126,7 +126,7 @@ describe('silent refresh is scoped to session-backed endpoints', () => {
   it('DOES refresh and retry once when /auth/me returns 401', async () => {
     mockFetchSequence([
       { status: 401, body: { error: { code: 'UNAUTHENTICATED', message: 'no', details: null, request_id: 'r1' } } },
-      { status: 201, body: { ok: true } },
+      { status: 200, body: { ok: true } },
       { status: 200, body: { user: { id: 'u1', fullName: 'A', phone: null, email: null }, roles: [], permissions: [], branches: [] } },
     ]);
 
@@ -153,7 +153,7 @@ describe('silent refresh is scoped to session-backed endpoints', () => {
 
 describe('CSRF header', () => {
   it('is omitted on login (the API skips CSRF there; no cookie exists yet)', async () => {
-    mockFetchSequence([{ status: 201, body: { ok: true } }]);
+    mockFetchSequence([{ status: 200, body: { ok: true } }]);
     await login('demo', '901234567', 'Educrm2026!');
     expect(calls).toHaveLength(1);
   });

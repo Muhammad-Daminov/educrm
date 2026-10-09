@@ -152,7 +152,7 @@ describe('Auth + RBAC (step 0.3)', () => {
   describe('login', () => {
     it('succeeds with the right tenant/login/password and sets auth cookies', async () => {
       const res = await login(tenantASlug, OWNER_A_PHONE, PASSWORD);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const jar = mergeCookiesFrom(res, {});
       expect(jar.access_token).toBeTruthy();
       expect(jar.refresh_token).toBeTruthy();
@@ -183,14 +183,14 @@ describe('Auth + RBAC (step 0.3)', () => {
   describe('refresh rotation and reuse detection', () => {
     it('rotates the refresh token, and reusing the old one revokes the whole family', async () => {
       const loginRes = await login(tenantASlug, OWNER_A_PHONE, PASSWORD);
-      expect(loginRes.status).toBe(201);
+      expect(loginRes.status).toBe(200);
       const jar1 = mergeCookiesFrom(loginRes, {});
 
       const refreshRes1 = await request(server)
         .post('/api/v1/auth/refresh')
         .set('Cookie', cookieHeader(jar1))
         .set('x-csrf-token', jar1.csrf_token ?? '');
-      expect(refreshRes1.status).toBe(201);
+      expect(refreshRes1.status).toBe(200);
       const jar2 = mergeCookiesFrom(refreshRes1, jar1);
       expect(jar2.refresh_token).not.toBe(jar1.refresh_token);
 
@@ -222,7 +222,7 @@ describe('Auth + RBAC (step 0.3)', () => {
       });
 
       const loginRes = await login(tenantASlug, phone, PASSWORD);
-      expect(loginRes.status).toBe(201);
+      expect(loginRes.status).toBe(200);
       const jar = mergeCookiesFrom(loginRes, {});
 
       const migratorPg = new PgClient({ connectionString: testApp.migratorUrl });
@@ -247,7 +247,7 @@ describe('Auth + RBAC (step 0.3)', () => {
 
     it('rejects an authenticated user lacking the required permission with 403', async () => {
       const loginRes = await login(tenantASlug, TEACHER_PHONE, PASSWORD);
-      expect(loginRes.status).toBe(201);
+      expect(loginRes.status).toBe(200);
       const jar = mergeCookiesFrom(loginRes, {});
 
       const res = await request(server).get('/api/v1/branches').set('Cookie', cookieHeader(jar));
@@ -327,7 +327,7 @@ describe('Auth + RBAC (step 0.3)', () => {
       // the next 5 failures below start from a clean slate regardless of
       // what earlier tests in this file did on the same IP.
       const reset = await login(tenantASlug, phone, PASSWORD);
-      expect(reset.status).toBe(201);
+      expect(reset.status).toBe(200);
 
       for (let i = 0; i < 5; i += 1) {
         const res = await login(tenantASlug, phone, 'wrong-password');

@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import type { Request, Response } from 'express';
@@ -43,6 +43,11 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
       },
     }),
     LoggerModule.forRoot({
+      // Same named-wildcard reason as the RequestIdMiddleware mount below.
+      // nestjs-pino defaults to `path: '*'`, which is the other source of
+      // the LegacyRouteConverter warning on boot — once per logger
+      // middleware it mounts.
+      forRoutes: [{ path: '{*path}', method: RequestMethod.ALL }],
       pinoHttp: {
         level: process.env.LOG_LEVEL ?? 'info',
         transport:
@@ -70,6 +75,10 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    // `'{*path}'`, not `'*'`: Express 5's path-to-regexp v8 dropped bare
+    // `*` in favour of named wildcards. Nest still auto-converts `'*'`, but
+    // only after logging a LegacyRouteConverter warning on every boot — and
+    // the conversion is a compatibility shim, not a promise.
+    consumer.apply(RequestIdMiddleware).forRoutes('{*path}');
   }
 }
