@@ -62,6 +62,10 @@ export async function startWorkerTestApp(): Promise<WorkerTestApp> {
   // The test drives dispatcher.tick() itself; a background interval racing
   // it would make "how many events did this tick dispatch" meaningless.
   process.env.OUTBOX_POLL_INTERVAL_MS = '3600000';
+  // Same reason: the partition-maintenance test drives tick() with an
+  // explicit `now`, and a background pass on the real clock would make
+  // "which partitions did this pass create" non-deterministic.
+  process.env.AUDIT_PARTITION_CHECK_INTERVAL_MS = '3600000';
 
   const { AppModule } = await import('../../src/app.module');
 

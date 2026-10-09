@@ -18,6 +18,19 @@ export const envSchema = z.object({
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   /** Events claimed per tenant per poll. */
   OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().max(1_000).default(50),
+
+  /**
+   * How often the worker checks that `audit_log` still has >= 3 months of
+   * future monthly partitions (APP_ROLE=worker only). Daily: the partitions
+   * are monthly, but a job that only fires on the 1st gets twelve attempts
+   * a year and every one of them can land during a deploy. Each check is
+   * idempotent.
+   */
+  AUDIT_PARTITION_CHECK_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24 * 60 * 60_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

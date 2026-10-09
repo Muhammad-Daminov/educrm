@@ -111,15 +111,33 @@ in the `/auth/me` branch list and falls back to "Barcha filiallar", rather
 than showing a branch they can no longer use. The backend scope check is
 unaffected either way (CLAUDE.md: permission checks are backend-only).
 
-### audit_log partitions run out in 2029-10
+### ~~audit_log partitions run out in 2029-10~~ CLOSED
 **Scope note:** the migration pre-creates 36 monthly partitions and
 deliberately creates no DEFAULT partition — emptying one later needs a
 DELETE, which the append-only trigger correctly refuses, so a missing month
 has to fail loudly instead of silently absorbing rows.
 `ensure_audit_log_partition(date)` is the idempotent maintenance entry
-point; it must be called (as `migrator` — it is DDL) on a schedule before
-the runway ends. No scheduler owns it yet.
-**Revisit:** T12 (deployment), or sooner if an ops cron lands first.
+point; it must be called on a schedule before the runway ends.
+**Resolved (product owner, 2026-10-09):** a worker job owns it —
+`AuditPartitionService` keeps the current month plus 3 future months
+(`apps/api/src/audit/audit-partition.service.ts`), running at worker
+startup and then every `AUDIT_PARTITION_CHECK_INTERVAL_MS` (default 24h).
+Checking daily rather than monthly is deliberate: "monthly" describes the
+partitions, and a job that only fires on the 1st gets twelve attempts a
+year to be asleep during a deploy. Covered by
+`test/audit-partition.spec.ts` and `test/integration/audit-partition.spec.ts`
+(creates the missing months, idempotent, survives concurrent passes, and
+the new partition is writable by `app_user` under RLS).
+
+**Side decision — how the worker gets DDL rights.** The function is DDL and
+the app connects as `app_user`, which owns nothing. Rather than hand a
+long-running network-facing process the `migrator` credentials (unrestricted
+DDL over the whole schema), `ensure_audit_log_partition` became SECURITY
+DEFINER with `SET search_path = public, pg_temp` and EXECUTE granted to
+`app_user` alone — so the privilege gained is exactly "create the audit_log
+partition for month X". It reads no rows, so unlike `auth_find_user` it is
+not an RLS bypass. Migration:
+`prisma/migrations/20261009140000_audit_log_partition_maintenance`.
 
 ### The outbox dispatcher polls once per tenant per tick
 **Judgment call:** `outbox_events` carries FORCE row level security like
