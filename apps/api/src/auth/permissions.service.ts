@@ -49,7 +49,8 @@ export class PermissionsService {
   }
 
   private async computeEffectivePermissions(userId: string): Promise<EffectivePermissions> {
-    const [userRoles, userBranches] = await Promise.all([
+    const [user, userRoles, userBranches] = await Promise.all([
+      this.tenantDb.user.findUnique({ where: { id: userId }, select: { isActive: true } }),
       this.tenantDb.userRole.findMany({
         where: { userId },
         include: { role: { include: { rolePermissions: true } } },
@@ -70,6 +71,10 @@ export class PermissionsService {
     return {
       scopes,
       allowedBranchIds: userBranches.map((userBranch) => userBranch.branchId),
+      // A missing row is treated as inactive: the only ways to get here
+      // with no user are a deleted account or a token for another tenant,
+      // and neither should be allowed to act.
+      isActive: user?.isActive ?? false,
     };
   }
 }

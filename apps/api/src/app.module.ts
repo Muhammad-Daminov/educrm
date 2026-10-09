@@ -17,6 +17,7 @@ import { RedisModule } from './redis/redis.module';
 import { BranchesModule } from './branches/branches.module';
 import { ReferenceModule } from './reference/reference.module';
 import { ClassroomsModule } from './classrooms/classrooms.module';
+import { EmployeesModule } from './employees/employees.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { OutboxModule } from './outbox/outbox.module';
@@ -76,6 +77,7 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
     BranchesModule,
     ReferenceModule,
     ClassroomsModule,
+    EmployeesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

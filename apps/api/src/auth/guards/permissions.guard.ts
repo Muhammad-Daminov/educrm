@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { REQUIRED_PERMISSION_KEY } from '../decorators/require-permission.decorator';
@@ -54,11 +60,28 @@ export class PermissionsGuard implements CanActivate {
       });
     }
 
+    const effective = await this.permissionsService.getEffectivePermissions(
+      user.tenantId,
+      user.userId,
+    );
+
+    // TZ M1.4: deactivation takes effect immediately, including for the
+    // access token the employee is holding right now. Checked before the
+    // self-service shortcut so a deactivated employee cannot even read
+    // /auth/me — the permission cache is invalidated on deactivation, so
+    // this costs one recompute and then nothing.
+    if (!effective.isActive) {
+      throw new UnauthorizedException({
+        code: 'ACCOUNT_DEACTIVATED',
+        message: 'This account is deactivated',
+        details: null,
+      });
+    }
+
     if (SELF_SERVICE_PERMISSIONS.has(requiredPermission)) {
       return true;
     }
 
-    const effective = await this.permissionsService.getEffectivePermissions(user.tenantId, user.userId);
     if (!this.permissionsService.hasPermission(effective, requiredPermission)) {
       throw new ForbiddenException({
         code: 'PERMISSION_DENIED',

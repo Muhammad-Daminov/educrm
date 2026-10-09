@@ -100,25 +100,15 @@ describe('Auth + RBAC (step 0.3)', () => {
     await migratorPg.query('UPDATE users SET is_active = false WHERE phone = $1', [INACTIVE_PHONE]);
     await migratorPg.end();
 
-    // Low-privilege user: 'teacher' role has no branch.* permissions, used
-    // to prove @RequirePermission actually denies.
+    // Low-privilege user: the seeded 'teacher' role template holds no
+    // branch.* permission, which is what proves @RequirePermission denies.
+    // The role itself comes from seedOwnerUser -> seedRoleTemplates; this
+    // test used to create its own 'teacher' row, which now collides with
+    // the seeded one on (tenant_id, code).
     const teacherTx = await seedPrisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantAId}, true)`;
-      const teacherRoleTemplatePermissions = [
-        { code: 'schedule.view', scope: 'own' as const },
-        { code: 'attendance.view', scope: 'own' as const },
-      ];
-      const role = await tx.role.create({
-        data: { id: uuidv7(), tenantId: tenantAId, code: 'teacher', name: 'Teacher', isSystem: true },
-      });
-      await tx.rolePermission.createMany({
-        data: teacherRoleTemplatePermissions.map((p) => ({
-          id: uuidv7(),
-          tenantId: tenantAId,
-          roleId: role.id,
-          permissionCode: p.code,
-          scope: p.scope,
-        })),
+      const role = await tx.role.findUniqueOrThrow({
+        where: { tenantId_code: { tenantId: tenantAId, code: 'teacher' } },
       });
       const user = await tx.user.create({
         data: {

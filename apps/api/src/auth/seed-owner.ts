@@ -8,7 +8,7 @@ import { Client as PgClient } from 'pg';
 import * as argon2 from 'argon2';
 import { uuidv7 } from '@educrm/shared';
 import { createTenantScopedClient } from '../database/tenant-prisma.provider';
-import { ROLE_TEMPLATES, type RoleTemplate } from './role-templates';
+import { ROLE_TEMPLATES } from './role-templates';
 
 export interface SeedOwnerInput {
   tenantSlug: string;
@@ -37,7 +37,9 @@ export async function findOrCreateTenant(
   const pg = new PgClient({ connectionString: migrationUrl });
   await pg.connect();
   try {
-    const existing = await pg.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [slug]);
+    const existing = await pg.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [
+      slug,
+    ]);
     if (existing.rows[0]) {
       return { id: existing.rows[0].id, created: false };
     }
@@ -51,10 +53,59 @@ export async function findOrCreateTenant(
 }
 
 /**
- * Clones the `owner` role template into tenant-scoped `roles`/
- * `role_permissions` rows (if the tenant has no `owner` role yet) and
- * upserts a user with that role — all inside one `tenantDb.transaction`.
- * Idempotent on `(tenantId, phone)`.
+ * Clones every TZ 3.1 role template into tenant-scoped `roles` /
+ * `role_permissions` rows. Idempotent: a role that already exists is left
+ * alone, permissions included, because a tenant may have adjusted it.
+ *
+ * All of them, not just `owner`: TZ 3.1 describes the templates as what a
+ * tenant starts with, and the T05 employee form has to offer roles to
+ * assign. A tenant with only an owner role can create employees who can
+ * log in and do nothing.
+ */
+export async function seedRoleTemplates(
+  prisma: PrismaClient,
+  tenantId: string,
+): Promise<{ created: string[] }> {
+  const tenantDb = createTenantScopedClient(prisma, { currentTenantId: tenantId });
+
+  return tenantDb.transaction(async (tx) => {
+    const existing = await tx.role.findMany({ select: { code: true } });
+    const have = new Set(existing.map((role) => role.code));
+    const created: string[] = [];
+
+    for (const template of ROLE_TEMPLATES) {
+      if (have.has(template.code)) {
+        continue;
+      }
+      const role = await tx.role.create({
+        data: {
+          id: uuidv7(),
+          tenantId,
+          code: template.code,
+          name: template.name,
+          isSystem: true,
+        },
+      });
+      await tx.rolePermission.createMany({
+        data: template.permissions.map((permission) => ({
+          id: uuidv7(),
+          tenantId,
+          roleId: role.id,
+          permissionCode: permission.code,
+          scope: permission.scope,
+        })),
+      });
+      created.push(template.code);
+    }
+
+    return { created };
+  });
+}
+
+/**
+ * Seeds the role templates (above) and upserts a user holding `owner` —
+ * the user part inside one `tenantDb.transaction`. Idempotent on
+ * `(tenantId, phone)`.
  */
 export async function seedOwnerUser(
   prisma: PrismaClient,
@@ -64,37 +115,14 @@ export async function seedOwnerUser(
   const tenantDb = createTenantScopedClient(prisma, { currentTenantId: tenantId });
   const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
 
-  const ownerTemplate: RoleTemplate | undefined = ROLE_TEMPLATES.find(
-    (template) => template.code === 'owner',
-  );
-  if (!ownerTemplate) {
-    throw new Error('No "owner" role template found in role-templates.ts');
-  }
+  await seedRoleTemplates(prisma, tenantId);
 
   return tenantDb.transaction(async (tx) => {
-    let role = await tx.role.findUnique({
+    const role = await tx.role.findUnique({
       where: { tenantId_code: { tenantId, code: 'owner' } },
     });
-
     if (!role) {
-      role = await tx.role.create({
-        data: {
-          id: uuidv7(),
-          tenantId,
-          code: ownerTemplate.code,
-          name: ownerTemplate.name,
-          isSystem: true,
-        },
-      });
-      await tx.rolePermission.createMany({
-        data: ownerTemplate.permissions.map((permission) => ({
-          id: uuidv7(),
-          tenantId,
-          roleId: role!.id,
-          permissionCode: permission.code,
-          scope: permission.scope,
-        })),
-      });
+      throw new Error('No "owner" role for this tenant after seeding the templates');
     }
 
     const user = await tx.user.upsert({

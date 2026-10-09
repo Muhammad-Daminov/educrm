@@ -103,6 +103,22 @@ export class ApiClient {
     return this.wrap<T>(res);
   }
 
+  async put<T>(
+    path: string,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<ApiResponse<T>> {
+    let req = request(this.server)
+      .put(path)
+      .set('Cookie', this.cookieHeader())
+      .set('x-csrf-token', this.jar.csrf_token ?? '');
+    for (const [key, value] of Object.entries(headers)) {
+      req = req.set(key, value);
+    }
+    const res = await req.send(body as object);
+    return this.wrap<T>(res);
+  }
+
   async patch<T>(
     path: string,
     body: unknown,

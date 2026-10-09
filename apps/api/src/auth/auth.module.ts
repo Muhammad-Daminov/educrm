@@ -23,6 +23,9 @@ import { RequestUserService } from './request-user.service';
     CookieService,
     RequestUserService,
   ],
-  exports: [PermissionsService, RequestUserService],
+  // PasswordService and SessionService are exported for EmployeesModule:
+  // creating an employee hashes a password, and TZ M1.4's deactivation has
+  // to revoke that employee's sessions.
+  exports: [PermissionsService, RequestUserService, PasswordService, SessionService],
 })
 export class AuthModule {}
