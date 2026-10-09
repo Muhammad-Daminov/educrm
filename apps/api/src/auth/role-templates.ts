@@ -108,7 +108,7 @@ export interface RoleTemplate {
 
 /**
  * Platform-level permissions a branch_manager does NOT get, even though
- * TZ 3.1 describes their scope as "O'z filiali: to'liq" (full, within their
+ * TZ 3.1 describes their scope as "Oʻz filiali: toʻliq" (full, within their
  * own branch) — these four are org-wide/owner-level concerns regardless of
  * branch (see docs/QUESTIONS.md for this and the other scope choices below;
  * TZ 3.1/3.2 describe role *intent*, not an exact permission×scope matrix).

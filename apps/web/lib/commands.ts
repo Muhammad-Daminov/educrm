@@ -1,3 +1,4 @@
+import { uzSearchKey } from '@educrm/shared';
 import type { NavItem } from '@/lib/nav';
 import { t, type TranslationKey } from '@/lib/i18n';
 
@@ -14,11 +15,11 @@ export interface Command {
 /**
  * Navigation commands for the Ctrl+K palette, derived from the menu the
  * user can actually see. That is what satisfies UX §2.4's "ruxsatsiz
- * amallar ko'rinmaydi" — the palette cannot offer more than the sidebar
+ * amallar koʻrinmaydi" — the palette cannot offer more than the sidebar
  * does, because it is built from the same filtered tree.
  *
  * R0 is navigation only; the action commands UX §2.4 describes ("yangi
- * o'quvchi", "to'lov qabul qilish") arrive with the screens that can
+ * oʻquvchi", "toʻlov qabul qilish") arrive with the screens that can
  * perform them.
  */
 export function buildCommands(menu: readonly NavItem[]): Command[] {
@@ -46,25 +47,16 @@ export function buildCommands(menu: readonly NavItem[]): Command[] {
 }
 
 /**
- * Subsequence ("fuzzy") match, case- and diacritic-insensitive: every
- * character of the query must appear in order, not necessarily adjacently.
- * "dav" finds "Davomat", and "oqv" finds "O'quvchilar" without the
- * apostrophe — which matters because the apostrophe in Uzbek Latin is the
- * character users are least likely to type (UX §8 wants ' and ' rendered
- * correctly, not typed).
+ * Subsequence ("fuzzy") match: every character of the query must appear in
+ * order, not necessarily adjacently. "dav" finds "Davomat", and "oqv" finds
+ * "Oʻquvchilar" without the mark — `uzSearchKey` (TZ 8.5) folds case,
+ * diacritics and every apostrophe variant away first, which matters because
+ * the mark in `oʻ`/`gʻ` is the character users are least likely to type
+ * (UX §8 wants it *rendered* correctly, not typed).
  */
-function normalize(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    // Strip combining marks, then the several apostrophe variants.
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[ʻʼ‘’'`]/g, '');
-}
-
 function fuzzyScore(query: string, label: string): number | null {
-  const needle = normalize(query);
-  const haystack = normalize(label);
+  const needle = uzSearchKey(query);
+  const haystack = uzSearchKey(label);
 
   if (needle.length === 0) {
     return 0;

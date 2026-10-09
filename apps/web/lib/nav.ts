@@ -178,7 +178,7 @@ export type RouteAccess = 'allowed' | 'forbidden' | 'unknown';
 
 /**
  * UX §1.2: a section the user lacks permission for must answer with the
- * "Ruxsat yo'q" state when opened directly by URL — not a 404, which would
+ * "Ruxsat yoʻq" state when opened directly by URL — not a 404, which would
  * tell them the screen does not exist. A genuinely unknown path is still
  * `unknown`, so a typo stays a 404.
  */

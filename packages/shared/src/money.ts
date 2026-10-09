@@ -25,9 +25,13 @@ export type CurrencyCode = 'UZS';
 
 export const DEFAULT_CURRENCY: CurrencyCode = 'UZS';
 
-/** Suffix shown after the amount, per UX §7 ("valyuta oxirida"). */
+/**
+ * Suffix shown after the amount, per UX §7 ("valyuta oxirida"). The mark in
+ * `soʻm` is U+02BB MODIFIER LETTER TURNED COMMA — it is part of the letter
+ * `oʻ`, not an apostrophe (TZ 8.5, see `uz-text.ts`).
+ */
 const CURRENCY_SUFFIX: Record<CurrencyCode, string> = {
-  UZS: "so'm",
+  UZS: 'soʻm',
 };
 
 const TIYIN_PER_UNIT = 100n;
@@ -89,7 +93,7 @@ export class Money {
     return new Money(value, currency);
   }
 
-  /** Convenience for whole-so'm literals in seeds, prices and tests. */
+  /** Convenience for whole-soʻm literals in seeds, prices and tests. */
   static fromSom(som: bigint, currency: CurrencyCode = DEFAULT_CURRENCY): Money {
     return new Money(som * TIYIN_PER_UNIT, currency);
   }
@@ -145,7 +149,7 @@ export class Money {
   /**
    * Splits into parts proportional to `weights`, with the division
    * remainder added to the **last** part so `sum(parts) === this` exactly
-   * (TZ M6.1.3: "qoldiq oxirgi yozuvga qo'shiladi — yig'indi har doim
+   * (TZ M6.1.3: "qoldiq oxirgi yozuvga qoʻshiladi — yigʻindi har doim
    * aniq"). Used for package prices spread over lessons, and for applying
    * a payment across several charges.
    *
@@ -223,7 +227,7 @@ export class Money {
 
   /**
    * Display form per UX §7: space-grouped thousands, currency last, tiyin
-   * shown only when non-zero ("Tiyin faqat kerak bo'lsa"). Negative amounts
+   * shown only when non-zero ("Tiyin faqat kerak boʻlsa"). Negative amounts
    * keep a plain minus sign — the "qarz" wording and the colour that UX §7
    * also asks for are the caller's job, since they're UI concerns and need
    * an i18n key.

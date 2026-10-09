@@ -3,7 +3,7 @@ import { t } from '@/lib/i18n';
 
 /**
  * UX §1.2 / §3.8: opening a section you lack permission for shows "Ruxsat
- * yo'q" with why and who to ask — explicitly *not* a 404. A 404 would claim
+ * yoʻq" with why and who to ask — explicitly *not* a 404. A 404 would claim
  * the screen does not exist, which sends the user hunting instead of asking
  * their manager for the permission.
  *

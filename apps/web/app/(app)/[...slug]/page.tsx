@@ -14,7 +14,7 @@ import { t } from '@/lib/i18n';
  * precedence over this route automatically.
  *
  * It exists for one thing the shell genuinely owes: UX §1.2's rule that
- * opening a section you lack permission for shows "Ruxsat yo'q" and *not*
+ * opening a section you lack permission for shows "Ruxsat yoʻq" and *not*
  * a 404. The distinction is the point — 404 says "no such screen", which
  * sends the user looking instead of asking for access.
  *

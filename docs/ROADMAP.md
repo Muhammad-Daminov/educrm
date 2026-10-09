@@ -9,6 +9,13 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
 - Roles: administrator and teacher do NOT get finance.view_amounts. Other defaults as inferred.
 - Price models in R0: monthly (with pro-rata) and per_lesson only.
 - UI language: uz (latin) only for R0, but all texts via i18n keys.
+- Uzbek letters: `oʻ`/`gʻ` use U+02BB MODIFIER LETTER TURNED COMMA; the tutuq
+  belgisi (`maʼlumot`) uses U+02BC MODIFIER LETTER APOSTROPHE. Search and sort
+  normalize `'` `’` `‘` `ʻ` `ʼ` `` ` `` to one form (TZ 8.5) — see
+  `uzSearchKey`/`compareUzbek` in `packages/shared/src/uz-text.ts`.
+- audit_log partitions: a monthly worker job keeps >= 3 months of future
+  partitions.
+- Web dev server port is 3100, permanently (3000 belongs to another project).
 
 - [x] T01–T03 Skeleton, RLS, auth + RBAC (done)
 

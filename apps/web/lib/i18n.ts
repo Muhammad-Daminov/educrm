@@ -5,12 +5,13 @@
  * real i18n library later only means changing this file's shape, not
  * every call site.
  *
- * Apostrophes here are plain ASCII `'`, which UX §8 does not accept — it
- * wants the proper Uzbek Latin characters in oʻ/gʻ. That is deferred rather
- * than forgotten (docs/QUESTIONS.md): the choice between U+02BB and U+2019
- * needs deciding once, and when it is, it is this one file plus Money's
- * currency suffix. The command palette normalizes every apostrophe variant
- * away when matching, so the switch cannot break search either way.
+ * Orthography (TZ 8.5, UX §8, product-owner decision recorded in
+ * docs/ROADMAP.md): `oʻ` and `gʻ` carry U+02BB MODIFIER LETTER TURNED
+ * COMMA — the mark is part of the letter — and the tutuq belgisi
+ * (`maʼlumot`) is U+02BC MODIFIER LETTER APOSTROPHE. Never the ASCII `'`
+ * or a curly quote. Search and sort go through `uzSearchKey`
+ * (`@educrm/shared`), which treats all of those as equivalent, so a user
+ * typing `'` — or nothing at all — still finds this text.
  */
 const uz = {
   // Login
@@ -21,18 +22,18 @@ const uz = {
   'login.password': 'Parol',
   'login.submit': 'Kirish',
   'login.submitting': 'Kirilmoqda...',
-  'login.error.invalid': "Tenant, login yoki parol noto'g'ri",
-  'login.error.rateLimited': "Urinishlar soni oshib ketdi, birozdan keyin qayta urinib ko'ring",
-  'login.error.generic': "Kirishda xatolik yuz berdi, qayta urinib ko'ring",
+  'login.error.invalid': 'Tenant, login yoki parol notoʻgʻri',
+  'login.error.rateLimited': 'Urinishlar soni oshib ketdi, birozdan keyin qayta urinib koʻring',
+  'login.error.generic': 'Kirishda xatolik yuz berdi, qayta urinib koʻring',
 
   // Navigation (UX §1.1)
   'nav.dashboard': 'Ish stoli',
-  'nav.students': "O'quvchilar",
+  'nav.students': 'Oʻquvchilar',
   'nav.units': 'Guruhlar',
   'nav.schedule': 'Jadval',
   'nav.attendance': 'Davomat',
   'nav.finance': 'Moliya',
-  'nav.finance.payments': "To'lovlar",
+  'nav.finance.payments': 'Toʻlovlar',
   'nav.finance.debtors': 'Qarzdorlar',
   'nav.org': 'Kompaniya',
   'nav.org.branches': 'Filiallar',
@@ -43,7 +44,7 @@ const uz = {
 
   // App shell (UX §2)
   'shell.brand': 'EduCRM',
-  'shell.sidebar.collapse': "Menyuni yig'ish",
+  'shell.sidebar.collapse': 'Menyuni yigʻish',
   'shell.sidebar.expand': 'Menyuni ochish',
   'shell.sidebar.label': 'Asosiy menyu',
   'shell.search.placeholder': 'Qidirish...',
@@ -60,30 +61,30 @@ const uz = {
 
   // Command palette (UX §2.4)
   'palette.title': 'Buyruqlar paneli',
-  'palette.placeholder': "Bo'limlar bo'yicha qidirish...",
+  'palette.placeholder': 'Boʻlimlar boʻyicha qidirish...',
   'palette.empty': 'Hech narsa topilmadi',
-  'palette.hint': "Harakatlanish uchun ↑ ↓, ochish uchun Enter, yopish uchun Esc",
+  'palette.hint': 'Harakatlanish uchun ↑ ↓, ochish uchun Enter, yopish uchun Esc',
   'palette.close': 'Yopish',
 
   // States (UX §3.8)
   'state.loading': 'Yuklanmoqda...',
-  'state.empty.title': "Hali ma'lumot yo'q",
+  'state.empty.title': 'Hali maʼlumot yoʻq',
   'state.error.title': 'Xatolik yuz berdi',
   'state.error.retry': 'Qayta urinish',
-  'state.error.requestId': "So'rov raqami",
-  'state.error.requestIdCopy': "So'rov raqamini nusxalash",
+  'state.error.requestId': 'Soʻrov raqami',
+  'state.error.requestIdCopy': 'Soʻrov raqamini nusxalash',
   'state.error.requestIdCopied': 'Nusxalandi',
-  'state.error.support': "Yordam uchun bu raqamni qo'llab-quvvatlash xizmatiga yuboring",
-  'state.forbidden.title': "Ruxsat yo'q",
+  'state.error.support': 'Yordam uchun bu raqamni qoʻllab-quvvatlash xizmatiga yuboring',
+  'state.forbidden.title': 'Ruxsat yoʻq',
   'state.forbidden.description':
-    "Bu bo'limni ko'rish uchun ruxsat kerak. Rahbaringizga murojaat qiling.",
-  'state.placeholder.title': "Bu bo'lim hali tayyor emas",
+    'Bu boʻlimni koʻrish uchun ruxsat kerak. Rahbaringizga murojaat qiling.',
+  'state.placeholder.title': 'Bu boʻlim hali tayyor emas',
   'state.placeholder.description':
-    "Interfeys asosi tayyor, bo'lim mazmuni keyingi bosqichlarda qo'shiladi.",
+    'Interfeys asosi tayyor, boʻlim mazmuni keyingi bosqichlarda qoʻshiladi.',
 
   // Dashboard (UX §4.0)
   'dashboard.greeting': 'Xush kelibsiz',
-  'dashboard.widgetsPending': "Vidjetlar keyingi bosqichlarda qo'shiladi",
+  'dashboard.widgetsPending': 'Vidjetlar keyingi bosqichlarda qoʻshiladi',
 
   // Profile
   'me.title': 'Profil',
@@ -97,6 +98,12 @@ const uz = {
 
   'common.loading': 'Yuklanmoqda...',
 } as const;
+
+/**
+ * The whole dictionary, exposed so the orthography guard in
+ * `test/i18n.spec.ts` can check every string at once. Call sites use `t`.
+ */
+export const translations = uz;
 
 export type TranslationKey = keyof typeof uz;
 

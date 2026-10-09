@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { t } from '@/lib/i18n';
 
 /**
- * UX §3.8: "300 ms dan tez bo'lsa skeleton ko'rsatilmaydi" — a skeleton
+ * UX §3.8: "300 ms dan tez boʻlsa skeleton koʻrsatilmaydi" — a skeleton
  * that flashes for 80ms reads as a glitch, so nothing is rendered until the
  * load has lasted long enough to be worth acknowledging.
  */

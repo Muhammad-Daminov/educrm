@@ -68,7 +68,7 @@ describe('filterCommands', () => {
   });
 
   it('matches without the apostrophe nobody wants to type', () => {
-    // "O'quvchilar" / "To'lovlar" — the apostrophe is the character users
+    // "Oʻquvchilar" / "Toʻlovlar" — the apostrophe is the character users
     // are least likely to reach for, so matching must not depend on it.
     expect(labels('oqu')[0]).toBe(t('nav.students'));
     expect(labels('tolov')).toContain(t('nav.finance.payments'));

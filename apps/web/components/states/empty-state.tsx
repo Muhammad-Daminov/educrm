@@ -9,7 +9,7 @@ import { t } from '@/lib/i18n';
  *  - filtered to nothing — "which filter is doing it + how to clear it"
  *
  * Hence `action` is part of the contract rather than optional decoration:
- * "Bo'sh holat foydasiz" (a useless empty state) is listed in UX P1 as a
+ * "Boʻsh holat foydasiz" (a useless empty state) is listed in UX P1 as a
  * defect to fix, and an empty state with no next step is exactly that.
  */
 export function EmptyState({

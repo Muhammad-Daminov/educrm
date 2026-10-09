@@ -22,7 +22,7 @@ describe('Money', () => {
 
   describe('add / subtract', () => {
     it('is exact over amounts a float would mangle', () => {
-      // 0.01 so'm steps: the classic case where number arithmetic drifts.
+      // 0.01 soʻm steps: the classic case where number arithmetic drifts.
       const cents = Array.from({ length: 300 }, () => Money.fromTiyin(1n));
       expect(Money.sum(cents).tiyin).toBe(300n);
     });
@@ -48,14 +48,14 @@ describe('Money', () => {
 
   describe('mulRatio', () => {
     it('is exact when the ratio divides evenly', () => {
-      // 15% of 1 200 000 so'm = 180 000 so'm, no rounding involved.
+      // 15% of 1 200 000 soʻm = 180 000 soʻm, no rounding involved.
       expect(Money.fromSom(1_200_000n).mulRatio(15n, 100n).tiyin).toBe(18_000_000n);
     });
 
     it('scales monthly price by attended/planned lessons (TZ M6.2 pro-rata)', () => {
-      // 400 000 so'm month, student joined after 5 of 12 lessons.
+      // 400 000 soʻm month, student joined after 5 of 12 lessons.
       const prorated = Money.fromSom(400_000n).mulRatio(7n, 12n);
-      expect(prorated.format()).toBe("233 333,33 so'm");
+      expect(prorated.format()).toBe("233 333,33 soʻm");
     });
 
     it('rounds half away from zero, symmetrically for refunds', () => {
@@ -76,7 +76,7 @@ describe('Money', () => {
 
   describe('allocate', () => {
     it('gives the remainder to the last part and sums back exactly', () => {
-      // 100 000 so'm package over 3 lessons: 33 333,33 / 33 333,33 / 33 333,34
+      // 100 000 soʻm package over 3 lessons: 33 333,33 / 33 333,33 / 33 333,34
       const parts = Money.fromSom(100_000n).allocateEvenly(3);
       expect(parts.map((part) => part.tiyin)).toEqual([3_333_333n, 3_333_333n, 3_333_334n]);
       expect(Money.sum(parts).tiyin).toBe(10_000_000n);
@@ -120,26 +120,26 @@ describe('Money', () => {
 
   describe('format (UX §7)', () => {
     it('groups thousands with spaces and puts the currency last', () => {
-      expect(Money.fromSom(1_250_000n).format()).toBe("1 250 000 so'm");
-      expect(Money.fromSom(1n).format()).toBe("1 so'm");
-      expect(Money.fromSom(999n).format()).toBe("999 so'm");
-      expect(Money.fromSom(1_000n).format()).toBe("1 000 so'm");
-      expect(Money.zero().format()).toBe("0 so'm");
+      expect(Money.fromSom(1_250_000n).format()).toBe("1 250 000 soʻm");
+      expect(Money.fromSom(1n).format()).toBe("1 soʻm");
+      expect(Money.fromSom(999n).format()).toBe("999 soʻm");
+      expect(Money.fromSom(1_000n).format()).toBe("1 000 soʻm");
+      expect(Money.zero().format()).toBe("0 soʻm");
     });
 
     it('shows tiyin only when non-zero', () => {
-      expect(Money.fromTiyin(125_000_050n).format()).toBe("1 250 000,50 so'm");
-      expect(Money.fromTiyin(125_000_005n).format()).toBe("1 250 000,05 so'm");
-      expect(Money.fromTiyin(125_000_000n).format()).toBe("1 250 000 so'm");
+      expect(Money.fromTiyin(125_000_050n).format()).toBe("1 250 000,50 soʻm");
+      expect(Money.fromTiyin(125_000_005n).format()).toBe("1 250 000,05 soʻm");
+      expect(Money.fromTiyin(125_000_000n).format()).toBe("1 250 000 soʻm");
     });
 
     it('prefixes a debt with a minus sign', () => {
-      expect(Money.fromSom(-450_000n).format()).toBe("-450 000 so'm");
-      expect(Money.fromTiyin(-5n).format()).toBe("-0,05 so'm");
+      expect(Money.fromSom(-450_000n).format()).toBe("-450 000 soʻm");
+      expect(Money.fromTiyin(-5n).format()).toBe("-0,05 soʻm");
     });
 
     it('is what toString() renders', () => {
-      expect(String(Money.fromSom(1_250_000n))).toBe("1 250 000 so'm");
+      expect(String(Money.fromSom(1_250_000n))).toBe("1 250 000 soʻm");
     });
   });
 
@@ -166,8 +166,8 @@ describe('Money', () => {
       expect(Money.zero().isZero()).toBe(true);
       expect(Money.fromSom(-1n).isNegative()).toBe(true);
       expect(Money.fromSom(1n).isPositive()).toBe(true);
-      expect(Money.fromSom(-1n).abs().format()).toBe("1 so'm");
-      expect(Money.fromSom(1n).abs().format()).toBe("1 so'm");
+      expect(Money.fromSom(-1n).abs().format()).toBe("1 soʻm");
+      expect(Money.fromSom(1n).abs().format()).toBe("1 soʻm");
       expect(Money.fromSom(1n).negate().tiyin).toBe(-100n);
       expect(Money.fromSom(1n).equals(Money.fromTiyin(100n))).toBe(true);
     });

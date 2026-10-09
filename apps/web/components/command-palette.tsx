@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
  * then a letter, `J`/`K`) need that typing guard and arrive with the list
  * screens they act on.
  * Commands are derived from the permission-filtered menu, which is how
- * UX §2.4's "ruxsatsiz amallar ko'rinmaydi" holds without a second
+ * UX §2.4's "ruxsatsiz amallar koʻrinmaydi" holds without a second
  * permission check here.
  */
 export function CommandPalette({

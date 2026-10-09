@@ -73,19 +73,25 @@ slug field on the login form) is out of scope for step 0.3.
 
 ## T04 — foundation finish
 
-### Uzbek apostrophes are ASCII, not the proper modifier letters
-**Contradiction:** UX §8 requires "Lotin yozuvi, o' va g' to'g'ri belgilar
-bilan" — the real characters in `oʻ`/`gʻ`. Everything shipped so far
-(`lib/i18n.ts`, `Money.format()`'s `so'm` suffix) uses the ASCII `'`.
-**Decision (deferred, not skipped):** stay ASCII for now, consistently,
-rather than mix the two. Switching needs one decision — U+02BB MODIFIER
-LETTER TURNED COMMA (orthographically correct) vs U+2019 RIGHT SINGLE
-QUOTATION MARK (what the spec PDF itself appears to use) — and then it is
-`apps/web/lib/i18n.ts` plus `CURRENCY_SUFFIX` in `packages/shared/src/
-money.ts`. The command palette already normalizes every apostrophe variant
-away before matching, so search cannot break either way.
-**Revisit:** before any customer-facing release — it is a correctness
-issue in the language, not a style preference.
+### ~~Uzbek apostrophes are ASCII, not the proper modifier letters~~ CLOSED
+**Contradiction:** UX §8 requires "Lotin yozuvi, oʻ va gʻ toʻgʻri belgilar
+bilan" — the real characters in `oʻ`/`gʻ`. Everything shipped up to T04
+(`lib/i18n.ts`, `Money.format()`'s `soʻm` suffix) used the ASCII `'`.
+**Resolved (product owner, 2026-10-09):** `oʻ`/`gʻ` are U+02BB MODIFIER
+LETTER TURNED COMMA; the tutuq belgisi (`maʼlumot`, `sanʼat`) is U+02BC
+MODIFIER LETTER APOSTROPHE. They are different characters and not
+interchangeable. Every existing UI text was converted, and
+`apps/web/test/i18n.spec.ts` now fails the build if any translation falls
+back to `'`, `’`, `‘`, `` ` `` or `´`.
+Search and sort normalize the whole family (TZ 8.5) through
+`uzSearchKey`/`compareUzbek` in `packages/shared/src/uz-text.ts`: the mark
+is dropped entirely in the comparison key, so `oquvchi` finds `Oʻquvchi`
+and `Gʻafurov` sorts between `Fozilov` and `Hasanov` instead of after every
+ASCII name. `normalizeApostrophes` folds variants to U+02BB for imported
+data, where the mark must be kept but its spelling must not vary.
+**Note for T05/T06 list endpoints:** ordering done in Postgres does *not*
+get this for free — `ORDER BY name` sorts on raw code points. Either sort
+through `compareUzbek` in the service, or add a normalized sort column.
 
 ### Sidebar collapse and branch selection live in localStorage
 **Contradiction:** UX §2.2 says the collapsed sidebar state is "foydalanuvchi
