@@ -7,6 +7,7 @@ import { TokenService } from './token.service';
 import { SessionService } from './session.service';
 import { RateLimitService } from './rate-limit.service';
 import { PermissionsService } from './permissions.service';
+import { normalizePhone } from './phone.util';
 import type { LoginDto } from './dto/login.dto';
 import type { RequestUser } from './types';
 
@@ -47,7 +48,12 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, ip: string): Promise<LoginResult> {
-    const accountKey = `${dto.tenant_slug}:${dto.login}`;
+    // A phone-shaped login is normalized to +998XXXXXXXXX before lookup, to
+    // match the form it's stored in (see seed:owner) — an email-shaped
+    // login is left as-is, since normalizePhone only ever returns non-null
+    // for a valid UZ phone number.
+    const login = normalizePhone(dto.login) ?? dto.login;
+    const accountKey = `${dto.tenant_slug}:${login}`;
     await this.rateLimitService.assertLoginAllowed(ip, accountKey);
 
     // Raw (unextended) client: no tenant context exists yet, and this is
@@ -56,7 +62,7 @@ export class AuthService {
     // through tenantDb, after tenantContext.setTenantId below.
     const rows = await this.prisma.$queryRaw<
       AuthFindUserRow[]
-    >`SELECT * FROM auth_find_user(${dto.tenant_slug}, ${dto.login})`;
+    >`SELECT * FROM auth_find_user(${dto.tenant_slug}, ${login})`;
     const found = rows[0];
 
     if (!found) {

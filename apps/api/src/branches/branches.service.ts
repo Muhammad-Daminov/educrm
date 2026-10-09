@@ -21,7 +21,7 @@ export class BranchesService {
     if (!tenantId) {
       throw new BadRequestException({
         code: 'TENANT_REQUIRED',
-        message: 'X-Tenant-Id header is required',
+        message: 'No tenant context on this request',
         details: null,
       });
     }
