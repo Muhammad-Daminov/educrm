@@ -106,3 +106,34 @@ search (T06/T07); the bare-key shortcuts in UX §2.4 (`/`, `N`, `G`+letter,
 `J`/`K`) need the list screens they act on; chat and notification bells are
 out of R0. The toast component ships with no caller yet — the first real one
 is T05's create/edit drawers.
+
+## Product-owner decisions, 2026-10-09 (pre-T05)
+
+**Done:** Three decisions landed as three commits. (1) Uzbek orthography:
+`oʻ`/`gʻ` are U+02BB, tutuq belgisi is U+02BC; every existing UI text and
+`Money`'s `soʻm` suffix converted, with `uzSearchKey`/`compareUzbek`/
+`normalizeApostrophes` in `packages/shared` as the one definition of the
+TZ 8.5 fold for search and sort, and a web test that fails the build on any
+ASCII or curly stand-in. (2) `AuditPartitionService`: a worker job keeping
+the current month plus 3 future `audit_log` partitions, checked at startup
+and every 24h, with `ensure_audit_log_partition` made SECURITY DEFINER so
+the worker needs no `migrator` credentials. (3) Web dev server on 3100
+permanently. 229 tests pass (119 web, 113 api, 45 shared, 22 config).
+
+**Decisions:** The search/sort key *drops* the mark rather than folding it
+to U+02BB — `oquvchi` has to find `Oʻquvchi`, and `Gʻafurov` has to sort
+between `Fozilov` and `Hasanov` instead of after every ASCII name;
+`normalizeApostrophes` is the fold-to-one-character variant, for imported
+data. Partition maintenance is checked daily, not monthly: "monthly"
+describes the partitions, and a job firing only on the 1st gets twelve
+chances a year to be asleep during a deploy. Granting `app_user` EXECUTE on
+one SECURITY DEFINER DDL function was chosen over giving a long-running
+process the `migrator` role — the privilege gained is exactly "create the
+audit_log partition for month X", and it reads no rows, so it is not an RLS
+bypass like `auth_find_user`.
+
+**Open questions:** Postgres `ORDER BY name` does not get the TZ 8.5 fold
+for free — T05/T06 list endpoints must either sort through `compareUzbek`
+in the service or add a normalized sort column; noted in docs/QUESTIONS.md.
+Two QUESTIONS entries are now closed (apostrophes, partition runway), four
+remain open.
