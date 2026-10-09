@@ -9,6 +9,12 @@ out/
 build/
 *.tsbuildinfo
 
+# tsc output accidentally emitted next to a .ts source (e.g. a watch build
+# picking up apps/api/scripts/*.ts) — never a real source file
+apps/api/scripts/*.js.map
+apps/api/scripts/seed-owner.js
+apps/api/scripts/seed-owner.d.ts
+
 # turbo
 .turbo/
 
