@@ -97,7 +97,12 @@ function findControllerFiles(dir) {
 }
 
 function main() {
-  const srcDir = path.join(__dirname, '..', 'src');
+  // Optional dir argument so a test can run this real script against a
+  // fixture and assert the actual exit code (proving `pnpm lint` fails),
+  // rather than only unit-testing checkSource.
+  const srcDir = process.argv[2]
+    ? path.resolve(process.argv[2])
+    : path.join(__dirname, '..', 'src');
   const files = findControllerFiles(srcDir);
   let failed = false;
 

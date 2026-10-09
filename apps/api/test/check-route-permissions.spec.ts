@@ -91,4 +91,58 @@ export class WidgetsController {
       expect(checkSource(source), file).toHaveLength(0);
     }
   });
+
+  /**
+   * Step 0.3 requirement E / spec test list: "lint fails when a test
+   * controller route has no decorator (prove the CI check works)". The
+   * tests above exercise checkSource in-process; this one runs the actual
+   * script the way `pnpm lint` does and asserts it really exits non-zero,
+   * which is what makes CI fail.
+   */
+  it('the real script exits non-zero on an undecorated route (so pnpm lint fails)', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { spawnSync } = await import('node:child_process');
+
+    const script = path.resolve(__dirname, '../scripts/check-route-permissions.js');
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'route-perm-check-'));
+
+    try {
+      fs.writeFileSync(
+        path.join(fixtureDir, 'bad.controller.ts'),
+        `@Controller('widgets')
+export class WidgetsController {
+  @Get()
+  findAll() {
+    return [];
+  }
+}
+`,
+      );
+
+      const bad = spawnSync(process.execPath, [script, fixtureDir], { encoding: 'utf8' });
+      expect(bad.status).toBe(1);
+      expect(bad.stderr).toContain('has neither @Public() nor @RequirePermission(...)');
+
+      // Same script, same fixture dir, once the route is decorated: exit 0.
+      fs.writeFileSync(
+        path.join(fixtureDir, 'bad.controller.ts'),
+        `@Controller('widgets')
+export class WidgetsController {
+  @RequirePermission('widget.view')
+  @Get()
+  findAll() {
+    return [];
+  }
+}
+`,
+      );
+
+      const good = spawnSync(process.execPath, [script, fixtureDir], { encoding: 'utf8' });
+      expect(good.status).toBe(0);
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  });
 });
