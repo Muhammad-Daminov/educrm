@@ -134,4 +134,35 @@ export class ApiClient {
     const res = await req.send(body as object);
     return this.wrap<T>(res);
   }
+
+  /** multipart/form-data POST — for the one endpoint shape that needs it
+   * (student CSV import): a file field plus arbitrary text fields. */
+  async postMultipart<T>(
+    path: string,
+    file: { field: string; filename: string; content: string },
+    fields: Record<string, string> = {},
+  ): Promise<ApiResponse<T>> {
+    let req = request(this.server)
+      .post(path)
+      .set('Cookie', this.cookieHeader())
+      .set('x-csrf-token', this.jar.csrf_token ?? '')
+      .attach(file.field, Buffer.from(file.content, 'utf-8'), file.filename);
+    for (const [key, value] of Object.entries(fields)) {
+      req = req.field(key, value);
+    }
+    const res = await req;
+    return this.wrap<T>(res);
+  }
+
+  async delete<T>(path: string, headers: Record<string, string> = {}): Promise<ApiResponse<T>> {
+    let req = request(this.server)
+      .delete(path)
+      .set('Cookie', this.cookieHeader())
+      .set('x-csrf-token', this.jar.csrf_token ?? '');
+    for (const [key, value] of Object.entries(headers)) {
+      req = req.set(key, value);
+    }
+    const res = await req;
+    return this.wrap<T>(res);
+  }
 }

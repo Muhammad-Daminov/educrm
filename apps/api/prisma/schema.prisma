@@ -28,6 +28,11 @@ model Tenant {
   paymentMethods  PaymentMethod[]
   holidays        Holiday[]
   teacherProfiles TeacherProfile[]
+  clients         Client[]
+  clientPhones    ClientPhone[]
+  contactPersons  ContactPerson[]
+  students        Student[]
+  importBatches   ImportBatch[]
 
   @@map("tenants")
 }
@@ -51,6 +56,7 @@ model Branch {
   userBranches UserBranch[]
   classrooms   Classroom[]
   holidays     Holiday[]
+  students     Student[]
 
   @@unique([tenantId, code])
   /// Target of the composite (tenant_id, branch_id) foreign keys on
@@ -95,6 +101,8 @@ model User {
   userRoles      UserRole[]
   userBranches   UserBranch[]
   teacherProfile TeacherProfile?
+  /// Students this employee is the responsible owner of (TZ 5.1 students.owner_id).
+  ownedStudents  Student[]       @relation("StudentOwner")
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
@@ -482,4 +490,180 @@ model TeacherLevel {
   @@unique([tenantId, teacherProfileId, levelId])
   @@index([tenantId, levelId])
   @@map("teacher_levels")
+}
+
+// ---------------------------------------------------------------------------
+// T06 — students (TZ M3)
+//
+// `households` (TZ 5.1, for multi-child billing) is deliberately not built
+// here — nothing in the T06 roadmap line needs it and R0 has no billing yet
+// (T10). `clients.household_id` is left off `Client` for the same reason;
+// adding it later is additive. See docs/QUESTIONS.md.
+//
+// `contact_persons` points at `Student` directly rather than through the TZ
+// 5.1 `client_id` + `contact_person_students` join table: BR-S1 ("bitta
+// client — bitta student") means that join buys sharing a contact across
+// multiple *unrelated* client records, which is not a requirement the
+// roadmap line asks for and has no UI to drive it in R0. Documented in
+// docs/QUESTIONS.md as a deliberate simplification, reversible later.
+//
+// BR-S4 (merge) is out of scope for T06 — no `merged_into_id` column, since
+// an unused nullable FK is dead weight until the merge flow exists.
+// ---------------------------------------------------------------------------
+
+enum Gender {
+  male
+  female
+}
+
+/// TZ 5.1 "clients": the billing/identity record a student (or, later, a
+/// lead) hangs off. Kept separate from `Student` because BR-S1 is a 1:1 in
+/// R0, but the TZ model still treats "the person" and "their student card"
+/// as different concerns — a future lead-to-student conversion (M2.5)
+/// attaches a `Student` to an existing `Client` rather than creating a new
+/// person.
+model Client {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  fullName    String    @map("full_name")
+  birthDate   DateTime? @map("birth_date") @db.Date
+  gender      Gender?
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(full_name).
+  fullNameKey String?   @map("full_name_key")
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  phones  ClientPhone[]
+  student Student?
+
+  @@unique([tenantId, id])
+  @@map("clients")
+}
+
+/// TZ 5.1 "client_phones". `tenantId` is denormalized onto the child row
+/// (not in the TZ column list) because CLAUDE.md's RLS policy is `tenant_id
+/// = current_setting(...)` verbatim on every tenant-scoped table — a policy
+/// that joined through `clients` to find the tenant would not be the
+/// standard pattern and would not be covered by the same test template.
+model ClientPhone {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  clientId  String   @map("client_id") @db.Uuid
+  /// Normalized +998XXXXXXXXX (TZ M3.2 SHART, libphonenumber) — see
+  /// `normalizePhone` in auth/phone.util.ts, reused here.
+  phoneE164 String   @map("phone_e164")
+  isPrimary Boolean  @default(true) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  client Client @relation(fields: [tenantId, clientId], references: [tenantId, id])
+
+  @@index([tenantId, phoneE164])
+  @@index([tenantId, clientId])
+  @@map("client_phones")
+}
+
+/// TZ 5.1 "contact_persons" — a student's parent/guardian/other contact.
+/// See the module comment above for why this points at `Student` rather
+/// than `Client` + a join table.
+model ContactPerson {
+  id                    String    @id @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  studentId             String    @map("student_id") @db.Uuid
+  fullName              String    @map("full_name")
+  relation              String
+  phoneE164             String?   @map("phone_e164")
+  email                 String?
+  isBillRecipient       Boolean   @default(false) @map("is_bill_recipient")
+  receivesNotifications Boolean   @default(true) @map("receives_notifications")
+  telegramChatId        String?   @map("telegram_chat_id")
+  telegramBlockedAt     DateTime? @map("telegram_blocked_at")
+  version               Int       @default(1)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  student Student @relation(fields: [tenantId, studentId], references: [tenantId, id])
+
+  @@index([tenantId, studentId])
+  @@map("contact_persons")
+}
+
+enum StudentStatus {
+  active
+  frozen
+  finished
+  no_enrollment
+  archived
+}
+
+/// TZ 5.1 "students" / M3. BR-S3: status is computed from enrollments once
+/// they exist (T07); until then every student is `no_enrollment` except
+/// where manually `archived` (the one status BR-S3 allows to be set by
+/// hand). `cachedBalance`/`churnScore` are carried as columns now (TZ 5.1
+/// lists them on this table) but are not yet computed by anything — T10/T11
+/// own that — so they stay at their defaults.
+model Student {
+  id              String        @id @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  clientId        String        @map("client_id") @db.Uuid
+  branchId        String        @map("branch_id") @db.Uuid
+  status          StudentStatus @default(no_enrollment)
+  ownerId         String?       @map("owner_id") @db.Uuid
+  cachedBalance   BigInt        @default(0) @map("cached_balance")
+  churnScore      Int?          @map("churn_score") @db.SmallInt
+  blacklisted     Boolean       @default(false)
+  blacklistReason String?       @map("blacklist_reason")
+  customData      Json?         @map("custom_data")
+  archivedAt      DateTime?     @map("archived_at")
+  /// Set when this row was created by `POST /students/import/confirm`;
+  /// what `POST /students/import/:batchId/rollback` archives (TZ M11.1
+  /// SHART). Not in the TZ 5.1 column list — added because rollback-by-
+  /// batch has nothing else to key off.
+  importBatchId   String?       @map("import_batch_id") @db.Uuid
+  version         Int           @default(1)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  client         Client          @relation(fields: [tenantId, clientId], references: [tenantId, id])
+  branch         Branch          @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  owner          User?           @relation("StudentOwner", fields: [tenantId, ownerId], references: [tenantId, id])
+  contactPersons ContactPerson[]
+  importBatch    ImportBatch?    @relation(fields: [importBatchId], references: [id])
+
+  @@unique([tenantId, clientId])
+  @@unique([tenantId, id])
+  @@index([tenantId, branchId, status])
+  @@map("students")
+}
+
+enum ImportEntityType {
+  students
+}
+
+/// TZ M11.1: every import is batched so it can be rolled back as a unit —
+/// `rollback` archives every row stamped with this batch's id (TZ SHART
+/// "bekor qilish — import qilingan yozuvlarni arxivlash"). No persisted
+/// column-mapping template (TZ describes it as part of the flow, not a
+/// SHART/KERAK of its own) — deferred, see docs/QUESTIONS.md.
+model ImportBatch {
+  id            String           @id @db.Uuid
+  tenantId      String           @map("tenant_id") @db.Uuid
+  entityType    ImportEntityType @map("entity_type")
+  fileName      String           @map("file_name")
+  totalRows     Int              @map("total_rows")
+  importedCount Int              @map("imported_count")
+  errorCount    Int              @map("error_count")
+  createdBy     String?          @map("created_by") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at")
+  rolledBackAt  DateTime?        @map("rolled_back_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  students Student[]
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("import_batches")
 }
