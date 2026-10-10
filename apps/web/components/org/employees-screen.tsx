@@ -39,6 +39,7 @@ const EMPLOYEES_PATH = '/api/v1/employees';
 const EXTRA_KEYS = ['role_code', 'branch_id'];
 
 interface EmployeeRow {
+  [key: string]: unknown;
   id: string;
   isActive: boolean;
   version: number;
@@ -96,6 +97,8 @@ export function EmployeesScreen(): JSX.Element {
   const params = useMemo(() => parseListParams(searchParams, EXTRA_KEYS), [searchParams]);
 
   const [refData, setRefData] = useState<ReferenceData | null>(null);
+  const [refDataError, setRefDataError] = useState<unknown>(null);
+  const [refDataReloadToken, setRefDataReloadToken] = useState(0);
   const [rows, setRows] = useState<EmployeeRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -111,20 +114,27 @@ export function EmployeesScreen(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
+    setRefDataError(null);
+    Promise.all([
       apiFetch<RoleOption[]>('/api/v1/roles'),
       fetchActiveOptions<NamedOption>('/api/v1/branches'),
       fetchActiveOptions<NamedOption>('/api/v1/disciplines'),
       fetchActiveOptions<NamedOption>('/api/v1/levels'),
-    ]).then(([roles, branches, disciplines, levels]) => {
-      if (!cancelled) {
-        setRefData({ roles, branches, disciplines, levels });
-      }
-    });
+    ])
+      .then(([roles, branches, disciplines, levels]) => {
+        if (!cancelled) {
+          setRefData({ roles, branches, disciplines, levels });
+        }
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setRefDataError(caught);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refDataReloadToken]);
 
   useEffect(() => {
     setSearchDraft(params.q);
@@ -298,6 +308,10 @@ export function EmployeesScreen(): JSX.Element {
 
   const pages = totalPages(total, params.pageSize);
   const filtered = hasActiveFilters(params);
+
+  if (refDataError !== null) {
+    return <ErrorState error={refDataError} onRetry={() => setRefDataReloadToken((token) => token + 1)} />;
+  }
 
   if (refData === null) {
     return <LoadingState rows={5} />;
@@ -542,7 +556,7 @@ export function EmployeesScreen(): JSX.Element {
           mode={drawer.mode}
           titleKey={drawer.mode === 'create' ? 'employees.create' : 'employees.edit'}
           fields={employeeFields}
-          row={drawer.mode === 'update' ? (drawer.row as unknown as Record<string, unknown>) : undefined}
+          row={drawer.mode === 'update' ? drawer.row : undefined}
           onClose={() => setDrawer(null)}
           onSubmit={onSubmitEmployeeForm}
         />

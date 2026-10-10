@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { ResourceScreen, type ColumnDef, type ExtraFilterDef } from '@/components/resource/resource-screen';
+import { ErrorState } from '@/components/states/error-state';
 import { LoadingState } from '@/components/states/loading-state';
 import { hasAnyPermission } from '@/lib/nav';
 import { t } from '@/lib/i18n';
@@ -25,18 +26,27 @@ interface BranchOption {
 export default function HolidaysPage(): JSX.Element {
   const { me } = useAuth();
   const [branches, setBranches] = useState<BranchOption[] | null>(null);
+  const [branchesError, setBranchesError] = useState<unknown>(null);
+  const [branchesReloadToken, setBranchesReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchActiveOptions<BranchOption>('/api/v1/branches').then((rows) => {
-      if (!cancelled) {
-        setBranches(rows);
-      }
-    });
+    setBranchesError(null);
+    fetchActiveOptions<BranchOption>('/api/v1/branches')
+      .then((rows) => {
+        if (!cancelled) {
+          setBranches(rows);
+        }
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setBranchesError(caught);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [branchesReloadToken]);
 
   const canWrite = hasAnyPermission(me.permissions, ['settings.manage']);
   const branchName = useMemo(
@@ -88,6 +98,10 @@ export default function HolidaysPage(): JSX.Element {
     ],
     [branchOptions],
   );
+
+  if (branchesError !== null) {
+    return <ErrorState error={branchesError} onRetry={() => setBranchesReloadToken((token) => token + 1)} />;
+  }
 
   if (branches === null) {
     return <LoadingState rows={5} />;

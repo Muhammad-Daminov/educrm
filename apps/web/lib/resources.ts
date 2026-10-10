@@ -11,8 +11,14 @@ const MAX_OPTIONS = 200;
  * being forgotten on a screen nobody looked at twice.
  */
 
-/** Minimum every list row has; screens extend it. */
+/**
+ * Minimum every list row has; screens extend it. The index signature is
+ * what lets `ResourceScreen<T>` hand a `T` to `ResourceFormDrawer`'s
+ * `Record<string, unknown>` row prop without an `as unknown as` cast —
+ * TS checks assignability to that prop against this constraint.
+ */
 export interface ArchivableRow {
+  [key: string]: unknown;
   id: string;
   isActive: boolean;
   version: number;

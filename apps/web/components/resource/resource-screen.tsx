@@ -406,7 +406,7 @@ export function ResourceScreen<T extends ArchivableRow>({
           mode={drawer.mode}
           titleKey={drawer.mode === 'create' ? createTitleKey : editTitleKey}
           fields={fields}
-          row={drawer.mode === 'update' ? (drawer.row as unknown as Record<string, unknown>) : undefined}
+          row={drawer.mode === 'update' ? drawer.row : undefined}
           onClose={() => setDrawer(null)}
           onSubmit={onSubmitForm}
         />

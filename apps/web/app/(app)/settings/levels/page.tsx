@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { ResourceScreen, type ColumnDef, type ExtraFilterDef } from '@/components/resource/resource-screen';
+import { ErrorState } from '@/components/states/error-state';
 import { LoadingState } from '@/components/states/loading-state';
 import { hasAnyPermission } from '@/lib/nav';
 import { t } from '@/lib/i18n';
@@ -24,18 +25,27 @@ interface DisciplineOption {
 export default function LevelsPage(): JSX.Element {
   const { me } = useAuth();
   const [disciplines, setDisciplines] = useState<DisciplineOption[] | null>(null);
+  const [disciplinesError, setDisciplinesError] = useState<unknown>(null);
+  const [disciplinesReloadToken, setDisciplinesReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchActiveOptions<DisciplineOption>('/api/v1/disciplines').then((rows) => {
-      if (!cancelled) {
-        setDisciplines(rows);
-      }
-    });
+    setDisciplinesError(null);
+    fetchActiveOptions<DisciplineOption>('/api/v1/disciplines')
+      .then((rows) => {
+        if (!cancelled) {
+          setDisciplines(rows);
+        }
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setDisciplinesError(caught);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [disciplinesReloadToken]);
 
   const canWrite = hasAnyPermission(me.permissions, ['settings.manage']);
   const disciplineName = useMemo(
@@ -93,6 +103,12 @@ export default function LevelsPage(): JSX.Element {
     ],
     [disciplineOptions],
   );
+
+  if (disciplinesError !== null) {
+    return (
+      <ErrorState error={disciplinesError} onRetry={() => setDisciplinesReloadToken((token) => token + 1)} />
+    );
+  }
 
   if (disciplines === null) {
     return <LoadingState rows={5} />;
