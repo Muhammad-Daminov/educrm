@@ -36,7 +36,7 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
   teacher profile (disciplines, levels), disciplines, levels, age categories,
   payment methods, holidays. Archive instead of delete. RLS + RLS test per table.
 
-- [ ] T06 Students
+- [x] T06 Students
   clients, client_phones (E.164), contact_persons, students (TZ M3), duplicate detection
   by phone on create, list with filters, student card with tabs (UX P2), archive.
   Excel/CSV import: upload → mapping → dry-run error report → confirm, import_batch_id,

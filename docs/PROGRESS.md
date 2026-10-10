@@ -189,3 +189,16 @@ interfaces rather than loosening `ResourceFormDrawer`'s prop type, so the
 constraint still catches a row missing a required field at the call site.
 
 **Open questions:** None new.
+
+## T06 wrap-up — verify after crash recovery (2026-10-10)
+
+**Done:** previous session crashed (VS Code closed) after commit
+454e75a while running the full test suite; working tree was already clean
+at that commit, so no uncommitted work to recover. Re-ran lint + typecheck
++ test from scratch: all green (4/4 lint, 4/4 typecheck, 25 test files /
+310 tests passed). Checked the T06 box in docs/ROADMAP.md.
+
+**Decisions:** none new — this was a verification-only pass, no code
+changed.
+
+**Open questions:** none new.
