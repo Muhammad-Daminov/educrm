@@ -75,7 +75,7 @@ export interface ResourceScreenProps<T extends ArchivableRow> {
  * checked again on the server (CLAUDE.md: permission checks in backend
  * only). A hidden button is a courtesy, not a control.
  */
-export function ResourceScreen<T extends ArchivableRow & Record<string, unknown>>({
+export function ResourceScreen<T extends ArchivableRow>({
   titleKey,
   createTitleKey,
   editTitleKey,
@@ -406,7 +406,7 @@ export function ResourceScreen<T extends ArchivableRow & Record<string, unknown>
           mode={drawer.mode}
           titleKey={drawer.mode === 'create' ? createTitleKey : editTitleKey}
           fields={fields}
-          row={drawer.mode === 'update' ? drawer.row : undefined}
+          row={drawer.mode === 'update' ? (drawer.row as unknown as Record<string, unknown>) : undefined}
           onClose={() => setDrawer(null)}
           onSubmit={onSubmitForm}
         />
@@ -415,7 +415,7 @@ export function ResourceScreen<T extends ArchivableRow & Record<string, unknown>
   );
 }
 
-function Chip({ label, onClear }: { label: string; onClear: () => void }): JSX.Element {
+export function Chip({ label, onClear }: { label: string; onClear: () => void }): JSX.Element {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs">
       {label}

@@ -1,6 +1,8 @@
 import { ApiError, apiFetch, apiFetchEnveloped, type ResponseMeta } from '@/lib/api';
 import { listParamsToApiQuery, type ListParams } from '@/lib/list-params';
 
+const MAX_OPTIONS = 200;
+
 /**
  * Client for the T05 archivable resources. Every one of them has the same
  * endpoints (`GET /x`, `GET /x/:id`, `POST /x`, `PATCH /x/:id`,
@@ -28,6 +30,24 @@ export async function fetchPage<T>(path: string, params: ListParams): Promise<Pa
 
 function metaTotal(meta: ResponseMeta | undefined, fallback: number): number {
   return typeof meta?.total === 'number' ? meta.total : fallback;
+}
+
+/**
+ * Every active row of a reference list, for a form's picker rather than a
+ * paged table — a branch or discipline select needs the whole set, not
+ * page 1 of it. `MAX_OPTIONS` matches the API's own list cap, so a tenant
+ * with more rows than that silently truncates the picker rather than
+ * erroring it.
+ */
+export async function fetchActiveOptions<T>(path: string): Promise<T[]> {
+  const { rows } = await fetchPage<T>(path, {
+    q: '',
+    is_active: 'true',
+    extra: {},
+    page: 1,
+    pageSize: MAX_OPTIONS,
+  });
+  return rows;
 }
 
 export function createResource<T>(path: string, body: unknown): Promise<T> {
@@ -125,7 +145,8 @@ function fieldOf(entry: ErrorDetail): string | undefined {
     return entry.field;
   }
   if (Array.isArray(entry.path)) {
-    const last = entry.path[entry.path.length - 1];
+    const path: unknown[] = entry.path;
+    const last = path[path.length - 1];
     return typeof last === 'string' ? last : undefined;
   }
   return undefined;

@@ -179,6 +179,7 @@ const uz = {
   'employees.field.email': 'Email',
   'employees.field.password': 'Dastlabki parol',
   'employees.field.password.hint': 'Kamida 10 belgi. Xodim keyin oʻzgartiradi.',
+  'employees.column.login': 'Login',
   'employees.column.roles': 'Rollar',
   'employees.column.branches': 'Filiallar',
   'employees.column.status': 'Holat',

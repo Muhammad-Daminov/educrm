@@ -144,6 +144,6 @@ export function hasActiveFilters(params: ListParams): boolean {
   return params.q !== '' || params.is_active !== 'true' || Object.keys(params.extra).length > 0;
 }
 
-export function totalPages(total: number, pageSize: number): number {
-  return Math.max(1, Math.ceil(total / pageSize));
+export function totalPages(rowCount: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(rowCount / pageSize));
 }
