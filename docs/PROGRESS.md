@@ -172,3 +172,20 @@ without an `If-Match`.
 existing list-query contract; the instruction to keep cursor pagination
 ready for students/lessons/ledger (TZ 6.1) is unaffected since those
 endpoints don't exist yet.
+
+## T05 follow-up — remove unknown-casts, handle ref-data load errors (2026-10-10)
+
+**Done:** `ArchivableRow`/`EmployeeRow` got an index signature so
+`ResourceScreen`/`EmployeesScreen` pass their row generic to
+`ResourceFormDrawer` without `as unknown as Record<string, unknown>`;
+added an apps/web `no-restricted-syntax` ESLint rule banning that cast
+pattern. The branch/discipline/role reference-data loads in classrooms,
+holidays, levels and `EmployeesScreen` had no `.catch` — a failed fetch
+left the screen spinning forever — now they render UX §3.8's `ErrorState`
+with retry. Full lint+typecheck+test pass (5/5 packages).
+
+**Decisions:** Fixed the type mismatch via an index signature on the row
+interfaces rather than loosening `ResourceFormDrawer`'s prop type, so the
+constraint still catches a row missing a required field at the call site.
+
+**Open questions:** None new.
