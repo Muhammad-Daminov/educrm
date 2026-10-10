@@ -137,3 +137,38 @@ for free — T05/T06 list endpoints must either sort through `compareUzbek`
 in the service or add a normalized sort column; noted in docs/QUESTIONS.md.
 Two QUESTIONS entries are now closed (apostrophes, partition runway), four
 remain open.
+
+## Step T05 — organization + reference data UI (2026-10-10)
+
+**Done:** Finished the T05 screens on top of the WIP data layer/API from
+the previous session: branches, classrooms (branch-scoped picker,
+`branchId` locked after create), disciplines, levels (discipline picker +
+"barcha fanlar" filter), age categories, payment methods, and holidays
+(branch picker + "barcha filiallar" filter) all run through the shared
+`ResourceScreen`/`ResourceFormDrawer` (UX P1 list + P6 drawer, URL-held
+filters, archive/restore). Employees got a bespoke screen instead —
+deactivate/activate rather than archive/restore, plus three PUT
+sub-resources (roles, branches, teacher profile) reusing `ResourceFormDrawer`
+for each. `/settings` groups the five reference lists behind tabs, gated
+once on `settings.manage`. Fixed three pre-existing lint failures left over
+in the WIP commit (money-arithmetic name heuristic false positive in
+`totalPages`, unsafe `any` from `Array.isArray` narrowing `unknown` to
+`any[]`, base-to-string on a `row[field]` read) and a latent type bug in
+`ResourceScreen`'s generic constraint (`T extends ArchivableRow &
+Record<string, unknown>` rejects any plain row interface — interfaces
+without an explicit index signature aren't assignable to `Record<string,
+unknown>` in strict mode, even though plain object types are).
+
+**Decisions:** Default roles grant create/update/archive for a resource
+all-or-nothing (confirmed against the TZ 3.1 role templates), so each
+screen's `canWrite` collapses those three permissions into one UI flag
+rather than gating each button separately — the backend still checks every
+call on its own permission regardless. Reference-data writes have no
+version header on the three employee sub-resources (roles/branches/teacher
+profile aren't optimistic-locked server side), so those drawers call PUT
+without an `If-Match`.
+
+**Open questions:** None new. Pagination here is offset-based per the
+existing list-query contract; the instruction to keep cursor pagination
+ready for students/lessons/ledger (TZ 6.1) is unaffected since those
+endpoints don't exist yet.

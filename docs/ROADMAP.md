@@ -30,7 +30,7 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
   Cleanup: fix "/api/v1/*" middleware path warning (named wildcard "/api/v1/{*path}");
   POST /auth/login and /auth/refresh return 200, not 201.
 
-- [ ] T05 Organization + reference data
+- [x] T05 Organization + reference data
   CRUD + UI (UX P1 list with filter chips + URL state, P6 forms in drawer):
   branches, classrooms, employees (create, roles, branches, deactivate = revoke sessions),
   teacher profile (disciplines, levels), disciplines, levels, age categories,
