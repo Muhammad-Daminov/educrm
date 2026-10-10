@@ -161,3 +161,106 @@ catch-all route resolves access in the browser: unknown paths call
 `notFound()` and render Next's 404 UI, but the document itself was already
 served as 200. Acceptable because every one of these routes is behind a
 login and none is indexable.
+
+## T07 — groups + enrollments
+
+### `default_price_id`/`price_id`/`curriculum_id`/`contract_id`/`payer_client_id`/`discount_ids` are omitted
+**Scope note (already accepted, not an ambiguity):** prices/discounts are
+T10, contracts and payer-vs-student billing are T10/T11, and nothing in R0
+reads a curriculum. These columns are absent from `study_units` and
+`enrollments` entirely rather than added as unused nullable FKs. Additive
+later.
+
+### BR-U1/BR-U2 are not enforced — schedule_rules doesn't exist yet
+**Contradiction with spec intent, safest option taken:** BR-U1 ("no lessons
+generated while `forming`") is moot — there are no lessons in R0 at all
+(T08). BR-U2 ("forming→active requires a schedule rule to exist") cannot be
+checked against anything, since `schedule_rules` is T08 and the table
+doesn't exist. Rather than invent a stand-in check (e.g. "block unless at
+least one enrollment exists", which isn't what BR-U2 says and would be a
+fabricated rule), `forming→active` is allowed unconditionally. This is a
+known, deliberate gap:
+**Revisit:** when T08 ships, forming→active should require
+`schedule_rules` to exist for the study unit, per the original BR-U2 text.
+
+### The study_unit status transition graph beyond BR-U2
+**Ambiguity:** the spec only pins down forming→active (BR-U2). Every other
+edge is this task's own call.
+**Decision:** `forming → {active, cancelled}`; `active → {paused, finished,
+cancelled}`; `paused → {active, finished, cancelled}`; `finished` and
+`cancelled` are terminal (no transitions out). Enforced in
+`StudyUnitsService.changeStatus` via `ALLOWED_STUDY_UNIT_TRANSITIONS`.
+
+### The enrollment status machine
+**Ambiguity:** TZ M4.2 lists the five statuses but not a transition graph.
+**Decision:** `active ↔ frozen`; `active`/`frozen` → `finished` or
+`cancelled`; `transferred` is only ever set by the transfer flow (BR-E2),
+never by a direct status call; `finished`/`cancelled`/`transferred` are
+terminal. Enforced in `StudyUnitsService` via
+`ALLOWED_ENROLLMENT_TRANSITIONS`.
+
+### BR-E1's EXCLUDE constraint has no status filter — cancel/finish shrink the range instead
+**Judgment call:** BR-E1 as specified is a literal `EXCLUDE USING gist` on
+`(student_id, study_unit_id, daterange(...))` with no `WHERE status =
+'active'` clause — so a *cancelled* enrollment's date range still
+structurally blocks a new overlapping one unless its range is closed.
+**Decision:** cancelling or finishing an enrollment always sets `end_date`
+to the action date (defaulting to today if the caller didn't supply one)
+rather than leaving it at whatever it was — this keeps the exclusion window
+bounded going forward instead of blocking every future re-enrollment
+indefinitely, while still satisfying BR-E1's literal constraint.
+
+### BR-E3: enrollments are never hard-deleted via the API
+**Decision (spec-directed, not actually ambiguous):** there is no `DELETE
+/study-units/:id/enrollments/:id` endpoint. "Remove member" in the UI calls
+`POST .../cancel` (status=cancelled); a natural end-of-term uses `POST
+.../finish` (status=finished). Both are reversible by audit trail, neither
+removes the row — lessons/attendance will reference enrollments once T08/T09
+exist, and a hard delete would orphan them.
+
+### BR-S3 precedence: `active` > `frozen` > `finished` > `no_enrollment`
+**Ambiguity:** the spec says status is "computed from enrollments" but
+doesn't give the precedence when a student holds enrollments in different
+states across multiple study units simultaneously.
+**Decision:** a student with at least one `active` enrollment is `active`,
+else at least one `frozen` enrollment makes them `frozen`, else any
+enrollment at all (finished/cancelled/transferred-away-with-nothing-active)
+makes them `finished`, else `no_enrollment`. `archived` is untouched by this
+computation (BR-S3: "stays manual"). Implemented in
+`apps/api/src/units/student-status.util.ts`, run inside the same
+transaction as every enrollment-status write (CLAUDE.md).
+
+### Study unit name auto-generation
+**Judgment call:** the UX mock (docs/design/05-groups.png) shows names like
+"B1 Backend" / "Ingliz A2" but doesn't specify the exact composition rule.
+**Decision:** `"<Discipline> <Level>"` when a level is set, else just the
+discipline name (`autoStudyUnitName` in `study-units.service.ts`). Only
+used when the caller leaves `name` blank; an explicit name always wins.
+
+### `study_unit`/`enrollment` permissions added to `administrator`, not to `sales_manager`/`teacher`
+**Judgment call:** the task brief asked for a decision on scope here. Groups
+and enrollment management (add/remove/transfer/freeze, status changes) is
+reception's day-to-day job in this product, the same bucket as
+`schedule.*`/`attendance.*` the `administrator` template already holds — so
+`study_unit.view/create/update/change_status/manage_members` and
+`enrollment.freeze` were added there. `sales_manager` keeps `student.view`
+only (no group-management surface — a "my leads" role, not reception).
+`teacher` gets neither: a read-only "Guruhlarim" view is more naturally part
+of T08/T09's schedule/attendance screens than a standalone grant here.
+**Revisit:** once T08/T09 exist, give `teacher` `study_unit.view` scoped to
+`own` if a teacher-facing group list is actually built.
+
+### UX 4.3 columns/filters cut for R0: "Dastur bajarilishi %" and "Faqat qarzdorlar bilan"
+**Scope note:** both need data that doesn't exist yet — curriculum/program
+tracking (no `curriculum_id`, out of scope per the task brief) and finance
+(T11 owns debtors). The group list's "Qarzdorlar" column renders a static
+`0` for every row with a comment pointing at T11; "Kam toʻldirilgan" (below
+min_size) is kept since it's computable today from `capacity`/`min_size`.
+
+### The debtors column and "Kam toʻldirilgan" filter
+**Scope note:** `Qarzdorlar` always shows `0` — there is no ledger/payment
+data in R0 (T11). `below_min_size` is a real filter, computed in the
+service from each study unit's enrolled count vs `min_size` (filtered in
+JS after the page is loaded, not in SQL — the enrolled count itself is a
+derived aggregate over `enrollments`, and a tenant's study-unit list is
+small enough that this is not a performance concern at R0's scale).

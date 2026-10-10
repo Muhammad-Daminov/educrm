@@ -33,6 +33,8 @@ model Tenant {
   contactPersons  ContactPerson[]
   students        Student[]
   importBatches   ImportBatch[]
+  studyUnits      StudyUnit[]
+  enrollments     Enrollment[]
 
   @@map("tenants")
 }
@@ -57,6 +59,7 @@ model Branch {
   classrooms   Classroom[]
   holidays     Holiday[]
   students     Student[]
+  studyUnits   StudyUnit[]
 
   @@unique([tenantId, code])
   /// Target of the composite (tenant_id, branch_id) foreign keys on
@@ -103,6 +106,8 @@ model User {
   teacherProfile TeacherProfile?
   /// Students this employee is the responsible owner of (TZ 5.1 students.owner_id).
   ownedStudents  Student[]       @relation("StudentOwner")
+  /// study_units this employee is named `responsible_id` on (TZ M4.1).
+  responsibleForStudyUnits StudyUnit[] @relation("StudyUnitResponsible")
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
@@ -323,6 +328,7 @@ model Discipline {
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
   levels             Level[]
   teacherDisciplines TeacherDiscipline[]
+  studyUnits         StudyUnit[]
 
   @@unique([tenantId, id])
   @@map("disciplines")
@@ -354,6 +360,7 @@ model Level {
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   discipline    Discipline?    @relation(fields: [tenantId, disciplineId], references: [tenantId, id])
   teacherLevels TeacherLevel[]
+  studyUnits    StudyUnit[]
 
   @@unique([tenantId, id])
   @@index([tenantId, disciplineId])
@@ -381,7 +388,10 @@ model AgeCategory {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  /// FK'd by plain `id` (not the composite (tenant_id,id) pattern) like
+  /// `Student.importBatch` — this table has no (tenantId, id) unique index.
+  studyUnits StudyUnit[]
 
   @@map("age_categories")
 }
@@ -633,6 +643,9 @@ model Student {
   owner          User?           @relation("StudentOwner", fields: [tenantId, ownerId], references: [tenantId, id])
   contactPersons ContactPerson[]
   importBatch    ImportBatch?    @relation(fields: [importBatchId], references: [id])
+  /// TZ M4.2 / BR-S3 — this student's enrollment history, read to compute
+  /// `status` above. See the T07 module comment near `StudyUnit`.
+  enrollments    Enrollment[]
 
   @@unique([tenantId, clientId])
   @@unique([tenantId, id])
@@ -666,4 +679,109 @@ model ImportBatch {
 
   @@index([tenantId, createdAt(sort: Desc)])
   @@map("import_batches")
+}
+
+// ---------------------------------------------------------------------------
+// T07 — study_units + enrollments (TZ M4.1 / M4.2)
+//
+// `defaultPriceId`/`priceId` and `curriculumId` from the TZ 5.1 column lists
+// are omitted entirely for R0 — prices/discounts are T10, and nothing in R0
+// reads a curriculum. `contractId`/`payerClientId`/`discountIds` on
+// Enrollment are the same cut (contracts, discounts: T10/T11). See
+// docs/QUESTIONS.md.
+//
+// `schedule_rules`/`lessons` (T08) do not exist yet, so BR-U1/BR-U2 ("no
+// lessons while forming", "forming→active requires a schedule rule") are
+// deliberately not enforced here — documented as a known gap in
+// docs/QUESTIONS.md rather than invented around.
+// ---------------------------------------------------------------------------
+
+enum StudyUnitType {
+  group
+  mini_group
+  individual
+}
+
+enum StudyUnitStatus {
+  forming
+  active
+  paused
+  finished
+  cancelled
+}
+
+/// TZ M4.1 "study_unit" — a guruh/mini-guruh/individual teaching unit.
+/// `capacity`/`minSize` drive BR-U3/BR-U4 warnings, never a hard block.
+model StudyUnit {
+  id            String          @id @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
+  branchId      String          @map("branch_id") @db.Uuid
+  disciplineId  String          @map("discipline_id") @db.Uuid
+  levelId       String?         @map("level_id") @db.Uuid
+  ageCategoryId String?         @map("age_category_id") @db.Uuid
+  type          StudyUnitType
+  status        StudyUnitStatus @default(forming)
+  name          String
+  /// Read-only: a Postgres STORED GENERATED column, uz_search_key(name) —
+  /// see Discipline for the pattern. Covers auto-generated names too, since
+  /// those are written to `name` at create time (not a separate column).
+  nameKey       String?         @map("name_key")
+  capacity      Int
+  minSize       Int             @map("min_size")
+  responsibleId String?         @map("responsible_id") @db.Uuid
+  color         String?
+  startDate     DateTime?       @map("start_date") @db.Date
+  endDate       DateTime?       @map("end_date") @db.Date
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  branch      Branch       @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  discipline  Discipline   @relation(fields: [tenantId, disciplineId], references: [tenantId, id])
+  level       Level?       @relation(fields: [tenantId, levelId], references: [tenantId, id])
+  /// Plain `id` FK (not the composite pattern) — `age_categories` has no
+  /// (tenant_id, id) unique index, same carve-out as `Student.importBatch`.
+  ageCategory AgeCategory? @relation(fields: [ageCategoryId], references: [id])
+  responsible User?        @relation("StudyUnitResponsible", fields: [tenantId, responsibleId], references: [tenantId, id])
+  enrollments Enrollment[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, branchId, status])
+  @@index([tenantId, nameKey])
+  @@map("study_units")
+}
+
+enum EnrollmentStatus {
+  active
+  frozen
+  finished
+  transferred
+  cancelled
+}
+
+/// TZ M4.2 "enrollment". BR-E1 (one student can't hold two overlapping
+/// enrollments in the same study_unit) is a Postgres EXCLUDE constraint,
+/// not application code — see the migration SQL. BR-E3: never hard-deleted
+/// via the API, only cancelled (docs/QUESTIONS.md).
+model Enrollment {
+  id          String           @id @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  studentId   String           @map("student_id") @db.Uuid
+  studyUnitId String           @map("study_unit_id") @db.Uuid
+  startDate   DateTime         @map("start_date") @db.Date
+  endDate     DateTime?        @map("end_date") @db.Date
+  status      EnrollmentStatus @default(active)
+  version     Int              @default(1)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  student   Student   @relation(fields: [tenantId, studentId], references: [tenantId, id])
+  studyUnit StudyUnit @relation(fields: [tenantId, studyUnitId], references: [tenantId, id])
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studyUnitId, status])
+  @@index([tenantId, studentId, status])
+  @@map("enrollments")
 }

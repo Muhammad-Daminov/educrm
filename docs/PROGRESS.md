@@ -202,3 +202,41 @@ at that commit, so no uncommitted work to recover. Re-ran lint + typecheck
 changed.
 
 **Open questions:** none new.
+
+## T07 — groups + enrollments (2026-10-10)
+
+**Done:** `study_units` (TZ M4.1) + `enrollments` (M4.2) tables, migration
+`20261010090000_study_units_enrollments` (btree_gist + BR-E1's `EXCLUDE
+USING gist` constraint, RLS pair, name_key search column). Backend module
+`apps/api/src/units` (`StudyUnitsService`/`StudyUnitsController`):
+create/list/update/change-status for study units; add/transfer/cancel/
+finish/freeze/unfreeze for enrollments, all through `tenantDb.transaction`.
+BR-E1 overlap maps the Postgres exclusion-violation to `409
+ENROLLMENT_OVERLAP` instead of a raw 500. BR-E2 transfer closes the old
+enrollment and opens the new one atomically. BR-U3/BR-U4 are warning
+fields (`overCapacity`/`belowMinSize`) on the study-unit view, never a
+block. BR-S3 student-status recompute
+(`apps/api/src/units/student-status.util.ts`) runs inside every
+enrollment-status transaction. Added `study_unit.*`/`enrollment.freeze` to
+the `administrator` role template. Frontend: `/units` list (status chips,
+branch/discipline filters, "kam toʻldirilgan" filter and count, fill-ratio
+badge) and `/units/:id` detail (status-machine buttons, capacity/min_size
+warning banners, members table with add/transfer/cancel/finish/freeze
+drawers) — `apps/web/components/units/*`, `apps/web/lib/units.ts`. Tests:
+`rls-study-units.spec.ts` (11, RLS + BR-E1 exclusion + cross-tenant FK),
+`study-units.spec.ts` (14, over HTTP — status machine, BR-E1/BR-E2, BR-S3
+recompute, BR-U3/BR-U4). Full suite green: api 27 files/335 tests, web 6
+files/395 tests.
+
+**Decisions:** BR-U2 relaxed to allow forming→active unconditionally since
+schedule_rules (T08) doesn't exist yet; the rest of the study-unit and
+enrollment status graphs, the BR-S3 precedence order, the auto-name
+algorithm, the EXCLUDE constraint's cancel/finish end-date shrink, and the
+administrator-only permission grant are all recorded in docs/QUESTIONS.md
+under "T07 — groups + enrollments". `age_category_id` FKs by plain `id`
+(not the `(tenant_id, id)` composite) because `age_categories` has no such
+unique index — same carve-out `students.import_batch_id` already uses.
+
+**Open questions:** none beyond what's in docs/QUESTIONS.md. The group
+list's teacher/classroom/schedule columns render "—" and the debtors
+column renders "0" for every row until T08/T09/T11 exist.

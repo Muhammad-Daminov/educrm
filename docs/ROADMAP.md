@@ -42,7 +42,7 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
   Excel/CSV import: upload → mapping → dry-run error report → confirm, import_batch_id,
   rollback (archive) by batch.
 
-- [ ] T07 Groups + enrollments
+- [x] T07 Groups + enrollments
   study_units (TZ M4.1), enrollments (M4.2) with EXCLUDE constraint, add/remove member,
   transfer, capacity warning, group list (UX 4.3) and group page with members.
 

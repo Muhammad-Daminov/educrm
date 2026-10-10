@@ -193,6 +193,16 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
         'student.view',
         'employee.view',
         'reference.view',
+        // T07: reception manages groups and enrollments day to day
+        // (adding/removing members, transfers, freezing a seat) — the
+        // same "front desk" surface as schedule/attendance above.
+        // docs/QUESTIONS.md.
+        'study_unit.view',
+        'study_unit.create',
+        'study_unit.update',
+        'study_unit.change_status',
+        'study_unit.manage_members',
+        'enrollment.freeze',
       ],
       'branch',
     ),
