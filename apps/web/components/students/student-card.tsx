@@ -14,7 +14,7 @@ import { useToast } from '@/components/toast-provider';
 import { StudentContactDrawer } from '@/components/students/student-contact-drawer';
 import { StudentEditDrawer } from '@/components/students/student-edit-drawer';
 import { t, type TranslationKey } from '@/lib/i18n';
-import { ApiError } from '@/lib/api';
+import { ApiError, apiFetch } from '@/lib/api';
 import { hasAnyPermission } from '@/lib/nav';
 import {
   archiveStudent,
@@ -59,6 +59,7 @@ export function StudentCard({ studentId }: { studentId: string }): JSX.Element {
   const { showToast } = useToast();
 
   const [student, setStudent] = useState<StudentRow | null>(null);
+  const [branchName, setBranchName] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
@@ -93,6 +94,26 @@ export function StudentCard({ studentId }: { studentId: string }): JSX.Element {
       cancelled = true;
     };
   }, [studentId, reloadToken]);
+
+  useEffect(() => {
+    if (student === null) {
+      return;
+    }
+    let cancelled = false;
+    apiFetch<{ name: string }>(`/api/v1/branches/${student.branchId}`)
+      .then((branch) => {
+        if (!cancelled) {
+          setBranchName(branch.name);
+        }
+      })
+      .catch(() => {
+        // Not critical — the branch id still identifies the row; a failed
+        // name lookup just falls back to showing nothing extra.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [student?.branchId]);
 
   const tab = (searchParams.get('tab') as TabKey | null) ?? 'overview';
   function setTab(next: TabKey): void {
@@ -209,7 +230,7 @@ export function StudentCard({ studentId }: { studentId: string }): JSX.Element {
         <div className="flex flex-col gap-6">
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-semibold">{t('students.field.branch')}</h2>
-            <p className="text-sm">{student.branchId}</p>
+            <p className="text-sm">{branchName ?? student.branchId}</p>
           </section>
 
           {student.phones !== undefined && (

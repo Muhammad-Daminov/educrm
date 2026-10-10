@@ -36,6 +36,17 @@ export function StudentCreateDrawer({
   const [formError, setFormError] = useState<string | null>(null);
   const dirty = fullName !== '' || phone !== '' || branchId !== '';
 
+  function clearError(field: string): void {
+    setErrors((previous) => {
+      if (previous[field] === undefined) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  }
+
   async function onPhoneBlur(): Promise<void> {
     const trimmed = phone.trim();
     if (trimmed === '') {
@@ -153,7 +164,7 @@ export function StudentCreateDrawer({
             aria-invalid={errors.fullName !== undefined}
             onChange={(event) => {
               setFullName(event.target.value);
-              setErrors((previous) => ({ ...previous, fullName: '' }));
+              clearError('fullName');
             }}
           />
         </Field>
@@ -173,7 +184,7 @@ export function StudentCreateDrawer({
             aria-invalid={errors.phone !== undefined}
             onChange={(event) => {
               setPhone(event.target.value);
-              setErrors((previous) => ({ ...previous, phone: '' }));
+              clearError('phone');
               setDuplicate(null);
             }}
             onBlur={() => void onPhoneBlur()}
@@ -223,7 +234,7 @@ export function StudentCreateDrawer({
             aria-invalid={errors.branchId !== undefined}
             onChange={(event) => {
               setBranchId(event.target.value);
-              setErrors((previous) => ({ ...previous, branchId: '' }));
+              clearError('branchId');
             }}
           >
             <option value="">{t('form.select.empty')}</option>
