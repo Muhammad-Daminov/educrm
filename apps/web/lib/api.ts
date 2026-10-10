@@ -53,7 +53,9 @@ async function rawFetch(path: string, init: RequestInit): Promise<Response> {
       headers.set('x-csrf-token', csrfToken);
     }
   }
-  if (init.body !== undefined && !headers.has('content-type')) {
+  // FormData (the CSV import upload) must not get a json content-type —
+  // the browser sets its own multipart boundary when none is given.
+  if (init.body !== undefined && !headers.has('content-type') && !(init.body instanceof FormData)) {
     headers.set('content-type', 'application/json');
   }
 

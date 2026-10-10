@@ -1,15 +1,19 @@
-import { randomBytes } from 'node:crypto';
-
 const HEX_PAIR = 2;
 
 /**
  * RFC 9562 UUIDv7: 48-bit unix-ms timestamp + version/variant bits + random tail.
  * Sortable by creation time, unlike v4 — useful as a PK that still hides any
  * sequential/auto-increment signal.
+ *
+ * Uses the Web Crypto API (`globalThis.crypto.getRandomValues`) rather than
+ * `node:crypto` — this package is imported from apps/web client components
+ * too, and a `node:` built-in has no browser equivalent a bundler can
+ * substitute. Web Crypto is the one randomness source both Node (18.19+/20+,
+ * global since Node 19) and every browser provide identically.
  */
 export function uuidv7(): string {
   const unixTsMs = BigInt(Date.now());
-  const rand = randomBytes(10);
+  const rand = globalThis.crypto.getRandomValues(new Uint8Array(10));
   const bytes = new Uint8Array(16);
 
   bytes[0] = Number((unixTsMs >> 40n) & 0xffn);

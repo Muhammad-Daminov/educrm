@@ -222,7 +222,7 @@ describe('contact persons', () => {
     const deleted = await owner.delete(
       `/api/v1/students/${created.data.id}/contact-persons/${contact.data.id}`,
     );
-    expect(deleted.status).toBe(204);
+    expect(deleted.status).toBe(200);
 
     const after = await owner.get<StudentView>(`/api/v1/students/${created.data.id}`);
     expect(after.data.contactPersons).toHaveLength(0);

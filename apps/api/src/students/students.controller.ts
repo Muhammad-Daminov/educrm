@@ -141,14 +141,20 @@ export class StudentsController {
     return this.service.updateContactPerson(id, contactId, parseIfMatch(ifMatch), dto);
   }
 
+  /**
+   * 200 with a body, not 204: the TZ 6.2 envelope wraps every success
+   * response, and a 204 is defined to carry none — `fetch()` in the browser
+   * rejects a body on that status code outright.
+   */
   @RequirePermission('student.update')
   @Delete(':id/contact-persons/:contactId')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   async deleteContactPerson(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('contactId', ParseUUIDPipe) contactId: string,
-  ): Promise<void> {
+  ): Promise<{ deleted: true }> {
     await this.service.deleteContactPerson(id, contactId);
+    return { deleted: true };
   }
 
   private async canViewContacts(): Promise<boolean> {
