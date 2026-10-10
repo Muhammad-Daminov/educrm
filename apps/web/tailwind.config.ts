@@ -7,6 +7,12 @@ const config: Config = {
     extend: {
       colors: {
         border: 'hsl(var(--border))',
+        // T05 added forms: `border-input` for a control's resting border and
+        // `ring-ring` for its focus ring. WCAG 2.1 AA (UX §8.6) needs the
+        // focus ring to be a real, visible colour — Tailwind's default ring
+        // colour is blue-500 regardless of theme, which fails on dark.
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         muted: {
