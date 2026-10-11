@@ -171,7 +171,7 @@ reads a curriculum. These columns are absent from `study_units` and
 `enrollments` entirely rather than added as unused nullable FKs. Additive
 later.
 
-### BR-U1/BR-U2 are not enforced — schedule_rules doesn't exist yet
+### ~~BR-U1/BR-U2 are not enforced — schedule_rules doesn't exist yet~~ CLOSED
 **Contradiction with spec intent, safest option taken:** BR-U1 ("no lessons
 generated while `forming`") is moot — there are no lessons in R0 at all
 (T08). BR-U2 ("forming→active requires a schedule rule to exist") cannot be
@@ -180,8 +180,29 @@ doesn't exist. Rather than invent a stand-in check (e.g. "block unless at
 least one enrollment exists", which isn't what BR-U2 says and would be a
 fabricated rule), `forming→active` is allowed unconditionally. This is a
 known, deliberate gap:
-**Revisit:** when T08 ships, forming→active should require
-`schedule_rules` to exist for the study unit, per the original BR-U2 text.
+**Resolved (T08):** `schedule_rules` now exists, so BR-U2 is enforced in
+`StudyUnitsService.changeStatus` — `forming→active` requires at least one
+`is_active` schedule rule for the study unit, else `409
+SCHEDULE_RULE_REQUIRED`. Only that one edge is gated: `paused→active` is
+left open, because a paused group already had a rule and demanding one
+again would strand a group whose term simply ended (see "BR-U2 gates only
+the forming→active edge" under T08 below). Covered by
+`test/integration/schedule.spec.ts` ("BR-U2 — forming → active requires an
+active schedule rule", 4 cases) and by the two replacement cases in
+`test/integration/study-units.spec.ts`.
+
+BR-U1 ("no lessons while forming") is still not enforced as a *block*: a
+rule can be created for a `forming` group and it materializes lessons
+immediately. This is deliberate and is what the UX requires — UX 4.3's
+group wizard builds the schedule as step 2, *before* the group is active,
+and its live preview is the whole point of the step. Blocking generation
+until `active` would make the wizard's preview the only way to ever see a
+schedule, and BR-U2 then makes activation depend on a rule that could not
+have produced anything. The two rules read as a cycle unless BR-U1 is
+about *not billing* for a forming group's lessons, which is T10's concern.
+**Revisit:** T10, when lesson_charges exist — if a forming group's lessons
+must not generate charges, that belongs in the charge engine, not in
+generation.
 
 ### The study_unit status transition graph beyond BR-U2
 **Ambiguity:** the spec only pins down forming→active (BR-U2). Every other
@@ -264,3 +285,151 @@ service from each study unit's enrolled count vs `min_size` (filtered in
 JS after the page is loaded, not in SQL — the enrolled count itself is a
 derived aggregate over `enrollments`, and a tenant's study-unit list is
 small enough that this is not a performance concern at R0's scale).
+
+## T08 — schedule
+
+### `lessons.attendance_count` exists so TZ M4.3's delete protection can be enforced before T09
+**Contradiction with task boundaries, safest option taken:** TZ M4.3 marks
+SHART that "a lesson with attendance or a charge is never auto-deleted",
+and regeneration deletes future lessons on every rule edit. But
+`attendances` is T09 and `lesson_charges` is T10, so there is nothing to
+join against — and leaving the protection unenforced for a whole task would
+mean shipping a regeneration that silently destroys attendance the moment
+T09 lands.
+**Decision:** `lessons.attendance_count INTEGER NOT NULL DEFAULT 0`, a
+counter T09 maintains inside the same transaction as every attendance
+write. Both the regeneration query and a `BEFORE DELETE` trigger
+(`lessons_refuse_protected_delete`) already honour it, as they do
+`status = 'completed'`. This is a forward-compatible seam, not a stand-in
+business rule: it invents no behaviour, it just gives the spec's own rule
+something to read today.
+**Revisit:** T09 must increment/decrement it transactionally, and T10 adds
+its own column (or extends the trigger) for charges. The trigger is the
+place to look.
+
+### BR-U2 gates only the `forming → active` edge
+**Ambiguity:** BR-U2 says "forming → active uchun jadval qoidasi SHART" and
+says nothing about `paused → active`.
+**Decision:** only `forming → active` requires an active rule.
+`paused → active` is left open, because a paused group demonstrably already
+had a rule, and a group whose term ended (rule deactivated, group paused)
+would otherwise be unresumable without first inventing a new schedule — a
+block the spec never asks for.
+
+### Generation never creates lessons in the past
+**Judgment call:** TZ M4.3 says past lessons are untouched by a rule
+*change*, but not what happens when a rule is created with a
+`period_start` that has already passed.
+**Decision:** generation always starts at `max(period_start, today)` in the
+branch timezone. A rule entered mid-term produces lessons from today
+forward, never retroactively — back-filling would create "planned" lessons
+for dates that already happened, which attendance and the T10 charge engine
+would then both have to special-case.
+
+### A cancelled lesson's date is never regenerated
+**Judgment call:** TZ M4.3 lists `is_detached` and attendance as
+regeneration protections but does not mention `cancelled`.
+**Decision:** regeneration treats every date still covered by a kept lesson
+— including a cancelled one — as occupied, so it emits nothing there.
+Re-creating a lesson on a cancelled date would silently un-cancel it. The
+cancel action also sets `is_detached`, so the protection holds from both
+directions.
+
+### A rule save with a known conflict is refused outright, not thinned
+**Judgment call:** TZ M4.4 makes a classroom/teacher clash a *block*, but
+does not say what a rule whose 50 occurrences include 2 clashes should do.
+**Decision:** the whole save is refused with `409 SCHEDULE_CONFLICT`
+carrying the free alternatives. Generating the other 48 and skipping the
+clashing 2 would produce a term with invisible holes in it. `POST
+/schedule-rules/preview` exists precisely so the user resolves this before
+saving, and the UI disables the save button while the preview reports a
+conflict.
+
+### The nightly horizon job appends; it does not rebuild
+**Judgment call:** TZ M4.3 says the evening job "extends the horizon". A
+plain re-run of the regeneration path would be *functionally* identical
+(same dates, same times) but would delete and re-insert every future
+planned lesson, handing each one a new id every night.
+**Decision:** `ScheduleRulesService.regenerate` takes a `mode` —
+`'rebuild'` for a rule edit or deactivation (the times really changed),
+`'extend'` for the job, which deletes nothing and only fills dates no
+lesson covers yet. Lesson ids are what attendance (T09) and charges (T10)
+hang off, and what any link or cached report refers to; churning them
+nightly would break all three. Covered by "leaves existing lesson ids
+alone" in `test/integration/schedule.spec.ts`.
+
+### "Faqat shu dars / Shu va keyingi barcha darslar" — only the single-lesson branch is built
+**Scope note:** UX P4 asks the drop gesture to offer a choice between
+moving one lesson and moving "this and all following". Only the
+single-lesson move is implemented (TZ M4.5's `moved_to_lesson_id` flow).
+"This and all following" is a *rule* change, not a lesson change — it means
+closing the current rule's period and opening a new one — and doing it from
+a drag would need a rule-splitting operation nothing else in R0 has. The
+rule editor on the group page does the same job explicitly today.
+**Revisit:** R1, alongside the bulk-move ("o'qituvchi kasal") flow in UX
+4.4, which needs the same rule-splitting primitive.
+
+### `schedule_rules.start_time`/`end_time` are TEXT `HH:MM`, not Postgres `time`
+**Judgment call (documented at length in the migration):** Prisma Client
+has no time-only scalar — `@db.Time` surfaces as a `DateTime` pinned to
+1970-01-01, which every read and write then has to un-mangle and which
+shifts under a non-UTC client timezone. `HH:MM` text is what the wire
+format and the UI already use, sorts correctly, is CHECK-constrained to a
+real 24-hour clock time, and casts to `time` with `::time` where SQL needs
+it.
+
+### Lesson instants are resolved in the branch timezone, not the server's
+**Judgment call:** TZ stores `start_at`/`end_at` as `timestamptz` but a
+rule is authored as wall-clock time ("Monday 18:00"). 18:00 means 18:00 to
+the teacher in the room.
+**Decision:** every conversion goes through `Branch.timezone` via
+`zonedTimeToUtc`/`utcToZonedTime` (`src/schedule/zoned-time.util.ts`),
+resolving the offset *per occurrence* through `Intl`. Asia/Tashkent has no
+DST today, but `Branch.timezone` is free-text IANA and a zone with DST
+would otherwise silently shift half a term's lessons by an hour. The
+`lessons.date` column is kept alongside the instants for the same reason:
+"which day is this lesson on" is a branch-local question a timestamptz
+alone cannot answer. Covered by the DST case in
+`test/unit/lesson-generation.spec.ts`.
+
+### The exclusion constraints are not keyed on `tenant_id`
+**Judgment call:** TZ M4.4 gives the two `EXCLUDE USING gist` constraints
+verbatim without `tenant_id`, and they are copied verbatim. That is safe
+rather than lucky: `classroom_id`/`actual_teacher_id` are uuidv7 primary
+keys, and the composite `(tenant_id, …)` foreign keys make a lesson's room
+and teacher provably belong to the lesson's own tenant, so two tenants can
+never present the same id. Worth stating explicitly because RLS does *not*
+scope constraint checking — the GiST index is shared across tenants — so
+this has to hold structurally, not by policy.
+
+### Free-teacher suggestions come from the `teacher` role, not from `teacher_profiles`
+**Judgment call:** UX 4.4 wants "mos bo'sh o'qituvchilar (availability +
+fan)". Teaching qualifications live on `teacher_profiles` (T05), but a
+profile is optional in practice — an employee created with the teacher role
+has none until someone fills one in.
+**Decision:** candidates are active users holding the `teacher` role in the
+branch; `discipline_id` *ranks* them (profile-matched first) rather than
+filtering. Keying the list off profiles would make the whole suggestion
+list silently empty for a newly onboarded centre, which is exactly when it
+is most needed. "Availability" is only "has no overlapping lesson" — the
+teacher availability calendar is R1 (TZ M1.4).
+
+### `lesson.reschedule`/`cancel`/`substitute_teacher` went to `administrator`; `schedule.delete` did not
+**Judgment call:** rescheduling, cancelling and arranging a substitute is
+reception's day-to-day job — "o'qituvchi kasal, bugungi darsni ko'chir" is
+a front-desk phone call (TZ M4.5, UX 4.4) — so those three joined the
+`administrator` template next to the `schedule.*`/`attendance.*` grants it
+already held. `schedule.delete` deliberately did not: deactivating a rule
+wipes a group's entire future schedule, which is a branch_manager-level
+decision.
+
+### UX P4 items cut for R0: Month/Day/Resource views, 15/30-minute grid, bulk move
+**Scope note:** the roadmap line asks for a "week calendar (by classroom /
+teacher), drag to move with conflict feedback; free classrooms finder", and
+that is what shipped — week grid, classroom/teacher *filters*, drag-to-move
+with a live conflict tooltip, and the free-resource finder. UX P4's
+Month/Day/Resource-column views, the switchable 15/30/60-minute grid step,
+colour-by-discipline toggle, the empty-cell "quick create" popover, and UX
+4.4's bulk-move ("o'qituvchi kasal → next 3 days") flow are not built. The
+grid step is a parameter (`GridBounds.stepMinutes`) rather than a hardcoded
+hour, so the toggle is additive.

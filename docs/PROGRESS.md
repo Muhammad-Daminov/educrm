@@ -240,3 +240,59 @@ unique index — same carve-out `students.import_batch_id` already uses.
 **Open questions:** none beyond what's in docs/QUESTIONS.md. The group
 list's teacher/classroom/schedule columns render "—" and the debtors
 column renders "0" for every row until T08/T09/T11 exist.
+
+## T08 — schedule (2026-10-11)
+
+**Done:** `schedule_rules` + `lessons` (TZ M4.3/M4.4), migration
+`20261011090000_schedule` — TZ M4.4's two `EXCLUDE USING gist` constraints
+copied verbatim (classroom and `actual_teacher_id`, both excluding
+`cancelled`/`moved`), the RLS pair, a `BEFORE DELETE` trigger refusing to
+drop a lesson with attendance or a completed one, and the TZ 5.2 indexes.
+`classrooms` gained the `(tenant_id, id)` unique key the new composite FKs
+target. Generation is a pure module (`src/schedule/lesson-generation.ts`):
+rolling 6-month horizon, holidays skipped, `total_academic_hours` mode
+where a holiday costs a date and never an hour, plus
+`zoned-time.util.ts` resolving every instant through `Branch.timezone` per
+occurrence (`Intl`, two-pass offset — DST-correct). Backend
+`apps/api/src/schedule`: rule CRUD + `POST /schedule-rules/preview` (and
+`/:id/preview`) returning lesson count, first/last date, skipped holidays,
+conflicts and free alternatives; `GET /lessons`; lesson move (old row →
+`moved` + `moved_to_lesson_id`, new row `is_detached`), cancel (reason
+mandatory), substitute (writes `actual_teacher_id` only), extra/makeup
+lesson; `GET /schedule/availability` powering the drag tooltip and UX 4.4's
+free-resource finder. Exclusion violations map to `409 SCHEDULE_CONFLICT`
+carrying `free_classrooms`/`free_times` (UX P4). `ScheduleHorizonService`
+extends the horizon nightly, worker-only, append-only. BR-U2 re-enabled.
+Frontend: `/schedule` week grid (time rows × day columns, colour by
+classroom, parallel lessons side by side, today's column highlighted,
+pointer drag-to-move with a live conflict tooltip naming free rooms/times),
+lesson-actions / free-resources / extra-lesson drawers, and a schedule
+section with live preview on the group page. Grid geometry, overlap packing
+and the conflict sentence are pure in `apps/web/lib/schedule.ts`. Tests:
+api 30 files / 427 tests, web 7 files / 544 tests, all green —
+`lesson-generation.spec.ts` (29, incl. DST and the hour-budget rules),
+`rls-schedule.spec.ts` (29: RLS, both constraints, cancelled/moved release
+their slot, `actual_teacher_id` keying, the two-connection parallel race
+leaving exactly one lesson, the DELETE guard), `schedule.spec.ts` (33 over
+HTTP), `apps/web/test/schedule.spec.ts` (48).
+
+**Decisions:** `lessons.attendance_count` is the forward-compatible seam
+that lets TZ M4.3's "never auto-delete a lesson with attendance" be
+enforced before `attendances` (T09) exists — T09 maintains it
+transactionally. The nightly job appends rather than rebuilds
+(`regenerate(..., 'extend')`) so planned lessons keep their ids, which T09
+attendance and T10 charges will reference. A rule save with a known
+conflict is refused whole rather than thinned, generation never back-fills
+the past, and a cancelled lesson's date is never regenerated. BR-U2 gates
+only `forming→active`, not `paused→active`. `start_time`/`end_time` are
+TEXT `HH:MM` because Prisma has no time-only scalar. Free-teacher
+suggestions key off the `teacher` role, not `teacher_profiles`, so a new
+centre's list isn't silently empty. Full writeups, plus the UX P4 items cut
+for R0 (Month/Day/Resource views, 15/30-min grid step, bulk move, "this and
+all following" on drop), are in docs/QUESTIONS.md under "T08 — schedule".
+Also applied CLAUDE.md's `maxWorkers=2` limit to both vitest configs.
+
+**Open questions:** none beyond docs/QUESTIONS.md. BR-U1 ("no lessons while
+forming") is intentionally not a block — UX 4.3's wizard builds the
+schedule before activation — and is flagged for T10 to decide whether a
+forming group's lessons must be exempt from charges.

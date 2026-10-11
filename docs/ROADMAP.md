@@ -46,7 +46,7 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
   study_units (TZ M4.1), enrollments (M4.2) with EXCLUDE constraint, add/remove member,
   transfer, capacity warning, group list (UX 4.3) and group page with members.
 
-- [ ] T08 Schedule
+- [x] T08 Schedule
   schedule_rules, lessons materialized (rolling 6 months, nightly extend job, skip holidays,
   is_detached protection, never auto-delete lessons with attendance/charges).
   Exclusion constraints for classroom and actual_teacher_id (exclude cancelled, moved).

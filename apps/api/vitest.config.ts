@@ -16,5 +16,12 @@ export default defineConfig({
     // Integration tests spin up a real Postgres via Testcontainers.
     testTimeout: 60_000,
     hookTimeout: 60_000,
+    // CLAUDE.md "Resource limits": this repo is developed on a low-RAM
+    // laptop. Vitest otherwise runs one worker per CPU core, and here each
+    // worker of an integration spec holds its *own* Postgres container plus
+    // a Nest application — so the default fan-out is what runs the machine
+    // out of memory, not any single test.
+    maxWorkers: 2,
+    minWorkers: 1,
   },
 });

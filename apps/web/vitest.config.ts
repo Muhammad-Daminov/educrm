@@ -10,5 +10,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     passWithNoTests: true,
+    // CLAUDE.md "Resource limits": this repo is developed on a low-RAM
+    // laptop, and vitest defaults to one worker per CPU core. Capping the
+    // pool keeps a full run from exhausting memory.
+    maxWorkers: 2,
+    minWorkers: 1,
   },
 });

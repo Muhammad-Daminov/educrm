@@ -144,15 +144,50 @@ describe('study_unit creation (TZ M4.1)', () => {
   });
 });
 
-describe('status machine (BR-U2 relaxed for R0)', () => {
-  it('allows forming -> active unconditionally (no schedule_rules yet)', async () => {
+describe('status machine (BR-U2 enforced since T08)', () => {
+  /**
+   * BR-U2 ("forming → active uchun jadval qoidasi SHART") was relaxed in
+   * T07 only because `schedule_rules` did not exist yet — there was nothing
+   * to check against. T08 added the table and re-enabled the rule, so these
+   * two cases replace T07's "allows forming -> active unconditionally".
+   * No classroom or teacher on the rule, so it cannot collide with anything.
+   */
+  async function addScheduleRule(studyUnitId: string): Promise<number> {
+    const periodStart = new Date().toISOString().slice(0, 10);
+    const periodEnd = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+    const res = await owner.post('/api/v1/schedule-rules', {
+      studyUnitId,
+      daysOfWeek: [1, 3, 5],
+      startTime: '18:00',
+      endTime: '19:30',
+      periodStart,
+      periodEnd,
+    });
+    expect(res.status, JSON.stringify(res.error)).toBe(201);
+    return res.status;
+  }
+
+  it('refuses forming -> active while the group has no schedule rule', async () => {
     const created = await owner.post<StudyUnitView>('/api/v1/study-units', newUnitBody());
+    const res = await owner.post(
+      `/api/v1/study-units/${created.data.id}/status`,
+      { status: 'active' },
+      { 'if-match': String(created.data.version) },
+    );
+    expect(res.status).toBe(409);
+    expect(res.error?.code).toBe('SCHEDULE_RULE_REQUIRED');
+  });
+
+  it('allows forming -> active once a schedule rule exists', async () => {
+    const created = await owner.post<StudyUnitView>('/api/v1/study-units', newUnitBody());
+    await addScheduleRule(created.data.id);
+
     const activated = await owner.post<StudyUnitView>(
       `/api/v1/study-units/${created.data.id}/status`,
       { status: 'active' },
       { 'if-match': String(created.data.version) },
     );
-    expect(activated.status).toBe(200);
+    expect(activated.status, JSON.stringify(activated.error)).toBe(200);
     expect(activated.data.status).toBe('active');
   });
 
