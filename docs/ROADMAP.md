@@ -83,3 +83,9 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
   Playwright e2e: login, group+schedule, attendance, payment, debtors.
   Production docker-compose (api, worker, web, postgres, pgbouncer, redis, caddy TLS),
   daily pg_dump backup + restore test script, Sentry, deploy README.
+
+## Decision (T08 → T10)
+- Forming study units MAY have generated lessons (they reserve classroom/teacher and show in
+  the calendar), but such lessons NEVER produce charges or attendance. Charges start only from
+  lessons dated on/after the moment the unit becomes active. Enforce in the T10 charge engine
+  with a test.
