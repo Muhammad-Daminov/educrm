@@ -89,3 +89,9 @@ R0 = no Payme/Click, no parent portal, no Telegram/SMS, no payroll, no CRM/leads
   the calendar), but such lessons NEVER produce charges or attendance. Charges start only from
   lessons dated on/after the moment the unit becomes active. Enforce in the T10 charge engine
   with a test.
+
+## Decision (T08 → T10)
+- Forming study units MAY have generated lessons (they reserve classroom/teacher and show in
+  the calendar), but such lessons NEVER produce charges or attendance. Charges start only from
+  lessons dated on/after the moment the unit becomes active. Enforce in the T10 charge engine
+  with a test.
