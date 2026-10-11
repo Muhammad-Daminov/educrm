@@ -31,6 +31,19 @@ export const envSchema = z.object({
     .int()
     .positive()
     .default(24 * 60 * 60_000),
+
+  /**
+   * How often the worker extends every active schedule rule's lessons out
+   * to the rolling 6-month horizon (APP_ROLE=worker only). TZ M4.3 calls
+   * this a "kechki job ... har kuni", so daily. Each pass is idempotent:
+   * regeneration skips dates an existing lesson already covers, so running
+   * more often only costs a query per rule.
+   */
+  SCHEDULE_HORIZON_CHECK_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24 * 60 * 60_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

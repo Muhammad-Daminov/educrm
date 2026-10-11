@@ -9,6 +9,7 @@ import type { Tx } from '../common/crud/archivable-crud.service';
 import { Enveloped } from '../common/http/response-envelope';
 import { notFound, unknownReference } from '../common/crud/crud.errors';
 import { settleFailedUpdate } from '../common/crud/optimistic-lock';
+import { scheduleRuleRequired } from '../schedule/schedule.errors';
 import { recomputeStudentStatus } from './student-status.util';
 import type {
   CancelEnrollmentDto,
@@ -148,12 +149,13 @@ function auditable(record: StudyUnitRecord): Record<string, unknown> {
 }
 
 /**
- * BR-U2 relaxed for R0 (docs/QUESTIONS.md): schedule_rules don't exist yet
- * (T08), so forming->active is allowed unconditionally rather than blocked
- * on a check that has nothing to check against. The rest of the graph is
- * this task's own judgment call, also recorded in docs/QUESTIONS.md:
- * forming->active, active<->paused, active/paused->finished, and any
- * non-terminal status -> cancelled. finished/cancelled are terminal.
+ * BR-U2 ("forming → active uchun jadval qoidasi SHART") is enforced in
+ * `changeStatus` as of T08, now that `schedule_rules` exists — it was
+ * relaxed in T07 only because there was nothing to check against
+ * (docs/QUESTIONS.md). The graph itself is this task's own judgment call,
+ * also recorded in docs/QUESTIONS.md: forming->active, active<->paused,
+ * active/paused->finished, and any non-terminal status -> cancelled.
+ * finished/cancelled are terminal.
  */
 const ALLOWED_STUDY_UNIT_TRANSITIONS: Record<string, readonly string[]> = {
   forming: ['active', 'cancelled'],
@@ -391,6 +393,22 @@ export class StudyUnitsService {
       const allowed = ALLOWED_STUDY_UNIT_TRANSITIONS[before.status] ?? [];
       if (!allowed.includes(dto.status)) {
         throw invalidStatusTransition(before.status, dto.status);
+      }
+
+      // BR-U2 (TZ M4.1, SHART): a group cannot start running without a
+      // schedule. Re-enabled in T08 — T07 allowed this unconditionally
+      // because `schedule_rules` did not exist yet (docs/QUESTIONS.md).
+      // Only the forming->active edge is gated: resuming a paused group
+      // already had a rule, and demanding one again would strand a group
+      // whose term simply ended.
+      if (before.status === 'forming' && dto.status === 'active') {
+        const rule = await tx.scheduleRule.findFirst({
+          where: { studyUnitId: id, isActive: true },
+          select: { id: true },
+        });
+        if (rule === null) {
+          throw scheduleRuleRequired(id);
+        }
       }
 
       const version = expectedVersion ?? before.version;

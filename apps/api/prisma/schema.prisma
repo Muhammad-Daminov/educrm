@@ -35,6 +35,8 @@ model Tenant {
   importBatches   ImportBatch[]
   studyUnits      StudyUnit[]
   enrollments     Enrollment[]
+  scheduleRules   ScheduleRule[]
+  lessons         Lesson[]
 
   @@map("tenants")
 }
@@ -99,15 +101,23 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  sessions       Session[]
-  userRoles      UserRole[]
-  userBranches   UserBranch[]
-  teacherProfile TeacherProfile?
+  tenant                   Tenant          @relation(fields: [tenantId], references: [id])
+  sessions                 Session[]
+  userRoles                UserRole[]
+  userBranches             UserBranch[]
+  teacherProfile           TeacherProfile?
   /// Students this employee is the responsible owner of (TZ 5.1 students.owner_id).
-  ownedStudents  Student[]       @relation("StudentOwner")
+  ownedStudents            Student[]       @relation("StudentOwner")
   /// study_units this employee is named `responsible_id` on (TZ M4.1).
-  responsibleForStudyUnits StudyUnit[] @relation("StudyUnitResponsible")
+  responsibleForStudyUnits StudyUnit[]     @relation("StudyUnitResponsible")
+  /// T08 (TZ M4.3/M4.4). Three separate relations because a lesson names a
+  /// teacher three ways: the one the rule assigned, the one who actually
+  /// taught it (what conflicts and payroll key off), and whoever marked it
+  /// complete.
+  scheduleRules            ScheduleRule[]
+  plannedLessons           Lesson[]        @relation("LessonTeacher")
+  taughtLessons            Lesson[]        @relation("LessonActualTeacher")
+  completedLessons         Lesson[]        @relation("LessonCompletedBy")
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
@@ -299,9 +309,13 @@ model Classroom {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  branch        Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  scheduleRules ScheduleRule[]
+  lessons       Lesson[]
 
+  /// The composite FK `lessons`/`schedule_rules` point at.
+  @@unique([tenantId, id])
   @@index([tenantId, branchId])
   @@map("classrooms")
 }
@@ -736,15 +750,17 @@ model StudyUnit {
   createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id])
-  branch      Branch       @relation(fields: [tenantId, branchId], references: [tenantId, id])
-  discipline  Discipline   @relation(fields: [tenantId, disciplineId], references: [tenantId, id])
-  level       Level?       @relation(fields: [tenantId, levelId], references: [tenantId, id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  branch        Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  discipline    Discipline     @relation(fields: [tenantId, disciplineId], references: [tenantId, id])
+  level         Level?         @relation(fields: [tenantId, levelId], references: [tenantId, id])
   /// Plain `id` FK (not the composite pattern) — `age_categories` has no
   /// (tenant_id, id) unique index, same carve-out as `Student.importBatch`.
-  ageCategory AgeCategory? @relation(fields: [ageCategoryId], references: [id])
-  responsible User?        @relation("StudyUnitResponsible", fields: [tenantId, responsibleId], references: [tenantId, id])
-  enrollments Enrollment[]
+  ageCategory   AgeCategory?   @relation(fields: [ageCategoryId], references: [id])
+  responsible   User?          @relation("StudyUnitResponsible", fields: [tenantId, responsibleId], references: [tenantId, id])
+  enrollments   Enrollment[]
+  scheduleRules ScheduleRule[]
+  lessons       Lesson[]
 
   @@unique([tenantId, id])
   @@index([tenantId, branchId, status])
@@ -784,4 +800,144 @@ model Enrollment {
   @@index([tenantId, studyUnitId, status])
   @@index([tenantId, studentId, status])
   @@map("enrollments")
+}
+
+// ---------------------------------------------------------------------------
+// T08 — schedule (TZ M4.3–M4.7)
+//
+// Lessons are *materialized* rather than computed from a recurrence rule on
+// every read. TZ M4.3 marks this SHART and gives the reasons: conflict
+// control lives in a DB constraint (which needs rows to constrain), each
+// lesson is individually editable, attendance and charges attach to a
+// lesson, and recomputing an RRULE per request is slow.
+// ---------------------------------------------------------------------------
+
+/// TZ M4.3 "schedule_rule" — the recurrence that lessons are generated from.
+///
+/// Two modes, enforced by CHECK constraints in the migration rather than in
+/// the DTO alone:
+///   * duration — either `endTime` (a fixed clock slot) or
+///     `academicHoursPerDay` (+ `breakMinutes`), exactly one of the two;
+///   * extent — `periodEnd` (a date) or `totalAcademicHours` (a budget), at
+///     least one of the two, so generation always has somewhere to stop.
+model ScheduleRule {
+  id                  String    @id @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  studyUnitId         String    @map("study_unit_id") @db.Uuid
+  /// ISO-8601 weekday numbers: 1 = Monday ... 7 = Sunday.
+  daysOfWeek          Int[]     @map("days_of_week") @db.SmallInt
+  /// `HH:MM` local wall-clock time in the branch's timezone. TEXT, not
+  /// Postgres `time` — see the migration header for why (Prisma has no
+  /// time-only scalar). CHECK-constrained to a real 24-hour clock time.
+  startTime           String    @map("start_time")
+  endTime             String?   @map("end_time")
+  /// TZ M4.3's alternative to `endTime`: an academic-hour count per day,
+  /// which with `breakMinutes` gives the lesson's wall-clock length.
+  academicHoursPerDay Decimal?  @map("academic_hours_per_day") @db.Decimal(5, 2)
+  breakMinutes        Int       @default(0) @map("break_minutes")
+  periodStart         DateTime  @map("period_start") @db.Date
+  periodEnd           DateTime? @map("period_end") @db.Date
+  /// Total-hours mode: generate until this budget is spent. TZ M4.3 —
+  /// holidays don't consume budget, they push the period's end out.
+  totalAcademicHours  Decimal?  @map("total_academic_hours") @db.Decimal(7, 2)
+  classroomId         String?   @map("classroom_id") @db.Uuid
+  teacherId           String?   @map("teacher_id") @db.Uuid
+  /// Deactivated, never deleted: lessons point here, and TZ M4.3 requires
+  /// past lessons to survive a rule change untouched.
+  isActive            Boolean   @default(true) @map("is_active")
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  studyUnit StudyUnit  @relation(fields: [tenantId, studyUnitId], references: [tenantId, id])
+  classroom Classroom? @relation(fields: [tenantId, classroomId], references: [tenantId, id])
+  teacher   User?      @relation(fields: [tenantId, teacherId], references: [tenantId, id])
+  lessons   Lesson[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studyUnitId])
+  @@map("schedule_rules")
+}
+
+enum LessonStatus {
+  planned
+  completed
+  cancelled
+  moved
+}
+
+/// TZ M4.3–M4.7 "lesson". One materialized occurrence.
+///
+/// The two conflict constraints (TZ M4.4, kritik) are
+/// `EXCLUDE USING gist` in the migration, not application checks: a
+/// `SELECT ... overlaps` then `INSERT` races, and the database is the only
+/// place the guarantee can actually hold. The service turns the violation
+/// into a `SCHEDULE_CONFLICT` body carrying free alternatives (UX P4).
+model Lesson {
+  id                String       @id @db.Uuid
+  tenantId          String       @map("tenant_id") @db.Uuid
+  studyUnitId       String       @map("study_unit_id") @db.Uuid
+  /// Null for an extra/makeup lesson created by hand. Never nulled by a
+  /// rule deletion: rules are deactivated, never deleted, and the FK is
+  /// RESTRICT (a composite `ON DELETE SET NULL` would try to null the
+  /// required `tenant_id` too).
+  scheduleRuleId    String?      @map("schedule_rule_id") @db.Uuid
+  /// The local calendar date, kept alongside `startAt` because "which
+  /// day is this lesson on" is a branch-local question that a timestamptz
+  /// alone cannot answer without re-deriving the branch timezone.
+  date              DateTime     @db.Date
+  startAt           DateTime     @map("start_at") @db.Timestamptz(3)
+  endAt             DateTime     @map("end_at") @db.Timestamptz(3)
+  classroomId       String?      @map("classroom_id") @db.Uuid
+  teacherId         String?      @map("teacher_id") @db.Uuid
+  /// TZ M4.4 (TUZATILDI): conflicts and payroll key off the teacher who
+  /// actually taught, defaulting to `teacherId`. Substituting changes only
+  /// this, so the substitute's own calendar is protected too.
+  actualTeacherId   String?      @map("actual_teacher_id") @db.Uuid
+  status            LessonStatus @default(planned)
+  /// TZ M4.3 (SHART): a hand-edited lesson is never overwritten by
+  /// regeneration.
+  isDetached        Boolean      @default(false) @map("is_detached")
+  academicHours     Decimal?     @map("academic_hours") @db.Decimal(5, 2)
+  /// Free text. TZ 5.1's `topic_id` (-> curriculum_topics) is omitted —
+  /// nothing in R0 reads a curriculum, same carve-out as
+  /// `StudyUnit.curriculumId`.
+  topic             String?
+  homework          String?
+  notes             String?
+  makeupForLessonId String?      @map("makeup_for_lesson_id") @db.Uuid
+  movedToLessonId   String?      @map("moved_to_lesson_id") @db.Uuid
+  cancelReason      String?      @map("cancel_reason")
+  completedAt       DateTime?    @map("completed_at")
+  completedBy       String?      @map("completed_by") @db.Uuid
+  /// TZ M4.3 (SHART) "a lesson with attendance is never auto-deleted".
+  /// `attendances` is T09, so this counter is the forward-compatible seam
+  /// regeneration and the DELETE-guard trigger check today; T09 maintains
+  /// it in the same transaction as every attendance write. See
+  /// docs/QUESTIONS.md.
+  attendanceCount   Int          @default(0) @map("attendance_count")
+  version           Int          @default(1)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  studyUnit       StudyUnit     @relation(fields: [tenantId, studyUnitId], references: [tenantId, id])
+  scheduleRule    ScheduleRule? @relation(fields: [tenantId, scheduleRuleId], references: [tenantId, id])
+  classroom       Classroom?    @relation(fields: [tenantId, classroomId], references: [tenantId, id])
+  teacher         User?         @relation("LessonTeacher", fields: [tenantId, teacherId], references: [tenantId, id])
+  actualTeacher   User?         @relation("LessonActualTeacher", fields: [tenantId, actualTeacherId], references: [tenantId, id])
+  completedByUser User?         @relation("LessonCompletedBy", fields: [tenantId, completedBy], references: [tenantId, id])
+
+  makeupFor Lesson?  @relation("LessonMakeup", fields: [tenantId, makeupForLessonId], references: [tenantId, id])
+  makeups   Lesson[] @relation("LessonMakeup")
+  movedTo   Lesson?  @relation("LessonMoved", fields: [tenantId, movedToLessonId], references: [tenantId, id])
+  movedFrom Lesson[] @relation("LessonMoved")
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studyUnitId, startAt])
+  @@index([tenantId, actualTeacherId, startAt])
+  @@index([tenantId, classroomId, startAt])
+  @@index([tenantId, scheduleRuleId, date])
+  @@map("lessons")
 }

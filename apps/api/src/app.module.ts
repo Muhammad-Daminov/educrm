@@ -20,6 +20,7 @@ import { ClassroomsModule } from './classrooms/classrooms.module';
 import { EmployeesModule } from './employees/employees.module';
 import { StudentsModule } from './students/students.module';
 import { UnitsModule } from './units/units.module';
+import { ScheduleModule } from './schedule/schedule.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { OutboxModule } from './outbox/outbox.module';
@@ -82,6 +83,7 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
     EmployeesModule,
     StudentsModule,
     UnitsModule,
+    ScheduleModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

@@ -185,6 +185,15 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
         'schedule.view',
         'schedule.create',
         'schedule.update',
+        // T08: rescheduling, cancelling and arranging a substitute are
+        // reception's calls, not a manager's — "oʻqituvchi kasal, bugungi
+        // darsni koʻchir" is the front desk's phone call (TZ M4.5, UX 4.4).
+        // `schedule.delete` is deliberately NOT here: dropping a rule wipes
+        // a group's whole future schedule, which is a branch_manager-level
+        // decision.
+        'lesson.reschedule',
+        'lesson.cancel',
+        'lesson.substitute_teacher',
         'attendance.view',
         'attendance.mark',
         'payment.view',

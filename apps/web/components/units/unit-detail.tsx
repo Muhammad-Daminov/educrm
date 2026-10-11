@@ -14,6 +14,7 @@ import { ErrorState } from '@/components/states/error-state';
 import { LoadingState } from '@/components/states/loading-state';
 import { useAuth } from '@/components/auth-provider';
 import { useToast } from '@/components/toast-provider';
+import { UnitScheduleSection } from '@/components/schedule/unit-schedule-section';
 import { t } from '@/lib/i18n';
 import { ApiError } from '@/lib/api';
 import { hasAnyPermission } from '@/lib/nav';
@@ -124,6 +125,10 @@ export function UnitDetail({ unitId }: { unitId: string }): JSX.Element {
       showToast({ message: t('units.error.overlap'), variant: 'error' });
     } else if (caught instanceof ApiError && caught.body.code === 'INVALID_STATUS_TRANSITION') {
       showToast({ message: t('units.error.invalidTransition'), variant: 'error' });
+    } else if (caught instanceof ApiError && caught.body.code === 'SCHEDULE_RULE_REQUIRED') {
+      // BR-U2 (TZ M4.1): forming -> active needs a schedule rule. The
+      // schedule block below is where the user fixes it.
+      showToast({ message: t('units.error.scheduleRuleRequired'), variant: 'error' });
     } else {
       showToast({
         message: caught instanceof ApiError ? caught.body.message : t('form.error.unknown'),
@@ -242,6 +247,12 @@ export function UnitDetail({ unitId }: { unitId: string }): JSX.Element {
           {t('units.warning.belowMinSize')}
         </p>
       )}
+
+      <UnitScheduleSection
+        studyUnitId={unit.id}
+        branchId={unit.branchId}
+        enrolledCount={unit.enrolledCount}
+      />
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">{t('units.members.title')}</h2>
