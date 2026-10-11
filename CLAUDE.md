@@ -96,3 +96,9 @@ Task queue: docs/ROADMAP.md — take the first unchecked task, do ONLY that task
 
 ## Style
 TypeScript strict, no `any`. Error format TZ 6.2. UI texts via i18n keys (uz default).
+
+## Resource limits (low-RAM laptop)
+- Run tests with limited parallelism: vitest --maxWorkers=2 (configure it in vitest configs).
+- Never run web and api test suites in parallel; run them one after another.
+- Do not start Playwright/browsers unless the task explicitly requires it; close them right after.
+- Stop every dev server you start before finishing.
