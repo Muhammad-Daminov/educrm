@@ -18,6 +18,13 @@ import { ApiClient } from './api-client';
  * The database-level guarantees (the exclusion constraints themselves, the
  * parallel-insert race, the DELETE guard trigger) are in
  * rls-schedule.spec.ts — they are properties of the schema, not of the API.
+ *
+ * Two things do belong here even though they are about the database: the
+ * exclusion constraints as seen by `app_user` (the role this very
+ * application connects with, against the schema this very application
+ * migrated), and the end-to-end race — two real HTTP requests for the same
+ * slot, where the constraint firing has to come back out of the API as a
+ * 409 SCHEDULE_CONFLICT rather than a 500.
  */
 
 interface LessonView {
@@ -162,6 +169,81 @@ async function sql<T extends Record<string, unknown>>(
   } finally {
     await pg.end();
   }
+}
+
+/**
+ * The same, but as `app_user` — the role the API itself connects with.
+ * `migrator` owns `lessons`, so a constraint proof run as migrator would
+ * only show that the *owner* is blocked; the question these tests ask is
+ * whether the application's own role can slip an overlap past the schema.
+ */
+async function asAppUser<T>(fn: (pg: PgClient) => Promise<T>): Promise<T> {
+  const pg = new PgClient({ connectionString: testApp.appUserUrl });
+  await pg.connect();
+  try {
+    await pg.query("SELECT set_config('app.current_tenant', $1, false)", [tenantId]);
+    return await fn(pg);
+  } finally {
+    await pg.end();
+  }
+}
+
+/** `pg` hangs the SQLSTATE and the constraint name off the error. */
+interface PgError extends Error {
+  code?: string;
+  constraint?: string;
+}
+
+const INSERT_LESSON = `INSERT INTO lessons
+  (id, tenant_id, study_unit_id, date, start_at, end_at, classroom_id, actual_teacher_id, status, cancel_reason)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`;
+
+interface RawLesson {
+  studyUnitId: string;
+  date: string;
+  /** Branch-local `HH:MM`; UTC+5, so a 13:00Z instant is 18:00 in Tashkent. */
+  startTime: string;
+  endTime: string;
+  classroomId?: string | null;
+  actualTeacherId?: string | null;
+  status?: string;
+  cancelReason?: string | null;
+}
+
+/**
+ * Inserts a lesson with no service in the way and returns the Postgres
+ * error, or `null` if it went in. Bypassing `LessonsService` is the entire
+ * point: its `assertSlotFree` pre-check would reject the second row long
+ * before the constraint got a chance to, which would prove nothing about the
+ * constraint.
+ */
+async function insertRawLesson(pg: PgClient, lesson: RawLesson): Promise<PgError | null> {
+  try {
+    await pg.query(INSERT_LESSON, [
+      uuidv7(),
+      tenantId,
+      lesson.studyUnitId,
+      lesson.date,
+      utcOf(lesson.date, lesson.startTime),
+      utcOf(lesson.date, lesson.endTime),
+      lesson.classroomId ?? null,
+      lesson.actualTeacherId ?? null,
+      lesson.status ?? 'planned',
+      lesson.cancelReason ?? null,
+    ]);
+    return null;
+  } catch (error) {
+    return error as PgError;
+  }
+}
+
+/**
+ * A date far past the 6-month generation horizon, so the raw rows below
+ * cannot collide with anything the rule tests materialize near today — and
+ * so a failure here is about the constraint and not about test fixtures.
+ */
+function rawDate(offset: number): string {
+  return plusDays('2028-03-06', offset);
 }
 
 let unitCounter = 0;
@@ -1124,6 +1206,152 @@ describe('TZ M4.3 — total academic hours mode', () => {
     ]);
     expect(lessons.map((lesson) => lesson.date)).not.toContain(holiday);
   });
+});
+
+describe('TZ M4.4 — the exclusion constraints as app_user, service bypassed', () => {
+  it('refuses a second overlapping lesson in the same classroom (23P01)', async () => {
+    const first = await newUnit();
+    const second = await newUnit();
+    const date = rawDate(0);
+
+    await asAppUser(async (pg) => {
+      expect(
+        await insertRawLesson(pg, {
+          studyUnitId: first.id,
+          date,
+          startTime: '18:00',
+          endTime: '19:30',
+          classroomId: classroomA,
+        }),
+      ).toBeNull();
+
+      // Overlaps by 30 minutes, different group, same room.
+      const error = await insertRawLesson(pg, {
+        studyUnitId: second.id,
+        date,
+        startTime: '19:00',
+        endTime: '20:30',
+        classroomId: classroomA,
+      });
+      expect(error?.code).toBe('23P01');
+      expect(error?.constraint).toBe('lessons_classroom_no_overlap');
+    });
+  });
+
+  it('refuses a second overlapping lesson for the same actual_teacher_id (23P01)', async () => {
+    const first = await newUnit();
+    const second = await newUnit();
+    const date = rawDate(1);
+
+    await asAppUser(async (pg) => {
+      expect(
+        await insertRawLesson(pg, {
+          studyUnitId: first.id,
+          date,
+          startTime: '18:00',
+          endTime: '19:30',
+          classroomId: null,
+          actualTeacherId: teacherA,
+        }),
+      ).toBeNull();
+
+      // No room at all, so only the teacher constraint can fire.
+      const error = await insertRawLesson(pg, {
+        studyUnitId: second.id,
+        date,
+        startTime: '19:00',
+        endTime: '20:30',
+        classroomId: null,
+        actualTeacherId: teacherA,
+      });
+      expect(error?.code).toBe('23P01');
+      expect(error?.constraint).toBe('lessons_teacher_no_overlap');
+    });
+  });
+
+  it.each([
+    { status: 'cancelled', cancelReason: 'Oʻqituvchi kasal', offset: 2 },
+    { status: 'moved', cancelReason: null, offset: 3 },
+  ])(
+    'lets an overlapping lesson in when the first one is $status',
+    async ({ status, cancelReason, offset }) => {
+      // Both constraints carry `WHERE status NOT IN ('cancelled','moved')`,
+      // so one overlapping row that reuses the room *and* the teacher proves
+      // both halves of that filter at once.
+      const first = await newUnit();
+      const second = await newUnit();
+      const date = rawDate(offset);
+
+      await asAppUser(async (pg) => {
+        expect(
+          await insertRawLesson(pg, {
+            studyUnitId: first.id,
+            date,
+            startTime: '18:00',
+            endTime: '19:30',
+            classroomId: classroomA,
+            actualTeacherId: teacherA,
+            status,
+            cancelReason,
+          }),
+        ).toBeNull();
+
+        expect(
+          await insertRawLesson(pg, {
+            studyUnitId: second.id,
+            date,
+            startTime: '19:00',
+            endTime: '20:30',
+            classroomId: classroomA,
+            actualTeacherId: teacherA,
+          }),
+        ).toBeNull();
+      });
+    },
+  );
+});
+
+describe('TZ M4.4 — two concurrent create requests for one slot', () => {
+  it('gives exactly one 201 and one 409, never a 500, over ten rounds', async () => {
+    // The race TZ M4.4 puts the constraint in the database for: both
+    // requests pass `assertSlotFree` before either has inserted, so the
+    // loser only finds out when the constraint fires mid-transaction. What
+    // this asserts is that the loser still leaves through the UX P4 door —
+    // 409 SCHEDULE_CONFLICT — and not as a raw 23P01 turned 500.
+    //
+    // Ten rounds because a race that is won the same way every time is a
+    // race that was never run: a single pass can easily serialize by luck.
+    const first = await newUnit();
+    const second = await newUnit();
+
+    for (let round = 0; round < 10; round += 1) {
+      // A fresh date per round, so an earlier round's surviving lesson is
+      // not what blocks the next one.
+      const date = plusDays('2028-06-05', round);
+      const body = { date, startTime: '18:00', endTime: '19:30', classroomId: classroomA };
+
+      const [left, right] = await Promise.all([
+        owner.post<LessonView>('/api/v1/lessons', { ...body, studyUnitId: first.id }),
+        owner.post<LessonView>('/api/v1/lessons', { ...body, studyUnitId: second.id }),
+      ]);
+
+      const statuses = [left.status, right.status].sort((a, b) => a - b);
+      expect(
+        statuses,
+        `round ${round}: ${JSON.stringify([left.error, right.error])}`,
+      ).toEqual([201, 409]);
+
+      const loser = left.status === 409 ? left : right;
+      expect(loser.error?.code).toBe('SCHEDULE_CONFLICT');
+      expect((loser.error?.details as ConflictDetail[])[0]?.kind).toBe('classroom');
+
+      const rows = await sql<{ count: string }>(
+        'SELECT count(*)::text AS count FROM lessons WHERE date = $1 AND classroom_id = $2',
+        [date, classroomA],
+      );
+      expect(rows[0]?.count, `round ${round}`).toBe('1');
+    }
+  }, 180_000);
 });
 
 describe('permissions', () => {

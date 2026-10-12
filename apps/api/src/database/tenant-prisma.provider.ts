@@ -1,5 +1,10 @@
 import { ForbiddenException } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@prisma/client';
+import {
+  MAX_TRANSACTION_ATTEMPTS,
+  isRetryableTransactionError,
+  retryDelay,
+} from './transaction-retry';
 
 /**
  * Minimal shape `createTenantScopedClient` needs from whatever holds the
@@ -55,13 +60,26 @@ export function createTenantScopedClient<T extends PrismaClient>(
        * use `tx` — calling back into this tenant-scoped client from within
        * would try to open a second, nested interactive transaction (Prisma
        * doesn't support that, and it would defeat the "set once" guarantee).
+       *
+       * A transaction aborted by a deadlock or a serialization failure is
+       * retried — see `transaction-retry.ts` for why that happens at all and
+       * why re-running the callback is safe.
        */
       async transaction<R>(fn: (tx: Prisma.TransactionClient) => Promise<R>): Promise<R> {
         const tenantId = requireTenantId();
-        return prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
-          return fn(tx);
-        });
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            return await prisma.$transaction(async (tx) => {
+              await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
+              return fn(tx);
+            });
+          } catch (error) {
+            if (attempt >= MAX_TRANSACTION_ATTEMPTS || !isRetryableTransactionError(error)) {
+              throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, retryDelay(attempt)));
+          }
+        }
       },
     },
     query: {

@@ -296,3 +296,24 @@ Also applied CLAUDE.md's `maxWorkers=2` limit to both vitest configs.
 forming") is intentionally not a block — UX 4.3's wizard builds the
 schedule before activation — and is flagged for T10 to decide whether a
 forming group's lessons must be exempt from charges.
+
+## T08 follow-up — DB constraint + race proofs (2026-10-12)
+
+**Done:** schedule.spec.ts now proves the two exclusion constraints as
+`app_user` with the service bypassed (raw overlapping INSERTs → SQLSTATE
+23P01 on `lessons_classroom_no_overlap` and `lessons_teacher_no_overlap`;
+overlap allowed once the first lesson is `cancelled` or `moved`), and runs
+the end-to-end race ten rounds: two concurrent `POST /lessons` for one
+classroom slot → exactly one 201, one 409 SCHEDULE_CONFLICT, one row.
+
+**Decisions:** the race test caught a real 500. Two concurrent inserts
+checked by the same exclusion constraint can deadlock (40P01) — the tuple
+enters the index before the overlap scan, so each transaction waits on the
+other's uncommitted row — and that escaped as INTERNAL_ERROR about 1 round
+in 10. `tenantDb.transaction` now retries a transaction aborted by 40P01 /
+40001 up to 3 times (`src/database/transaction-retry.ts`); the retry finds
+the winner committed and answers with the ordinary 409 + alternatives. Only
+transient aborts retry — 23P01 is a real answer and still propagates.
+
+**Open questions:** none. Deadlock retry sits in the shared transaction
+helper, so later modules (T10 charges) inherit it rather than re-solving it.
