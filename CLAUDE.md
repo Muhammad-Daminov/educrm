@@ -102,3 +102,6 @@ TypeScript strict, no `any`. Error format TZ 6.2. UI texts via i18n keys (uz def
 - Never run web and api test suites in parallel; run them one after another.
 - Do not start Playwright/browsers unless the task explicitly requires it; close them right after.
 - Stop every dev server you start before finishing.
+- tenantDb.transaction may RETRY the whole callback (deadlock 40P01 / serialization 40001).
+  Callbacks must contain ONLY database work: no HTTP calls, SMS, emails, file writes, queue
+  pushes. External effects go through outbox_events inside the transaction.
